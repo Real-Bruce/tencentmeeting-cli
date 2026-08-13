@@ -89,6 +89,50 @@ tmeet auth logout
 
 ---
 
+## 作为 MCP Server 使用
+
+`tmeet` 可作为 **MCP（Model Context Protocol）server** 运行，将全部能力以 tool 形式暴露给 AI Agent（Cursor、Claude Desktop 等）。
+
+### 配置
+
+在 MCP client 配置中添加：
+
+```json
+{
+  "mcpServers": {
+    "tmeet": {
+      "command": "tmeet",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### 使用流程
+
+1. 先在终端执行 `tmeet auth login` 完成 OAuth 登录授权（MCP server 读取已有本地凭证）
+2. 启动 MCP client，即可调用全部 30 个 tool
+
+### 可用 tool 列表
+
+| 域 | tool | 说明 |
+|------|------|------|
+| auth | `auth_login_url` / `auth_login_poll` | 获取授权 URL / 单次轮询登录结果（双 tool 非阻塞登录） |
+| meeting | `meeting_list` / `meeting_list_ended` / `meeting_search` | 列出会议 / 已结束会议 / 搜索会议 |
+| meeting | `meeting_get` / `meeting_create` / `meeting_update` / `meeting_cancel` | 会议详情 / 创建 / 更新 / 取消 |
+| meeting | `meeting_invitees_list` / `_add` / `_remove` / `_replace` | 受邀者管理 |
+| record | `record_list` / `record_search` / `record_address` | 录制列表 / 搜索 / 下载地址 |
+| record | `record_smart_minutes` / `record_transcript_get` / `_paragraphs` / `_search` | 智能纪要 / 转写 |
+| record | `record_permission_apply_prepare` / `_commit` | 录制权限申请（两步流） |
+| report | `report_participants` / `report_waiting_room_log` | 参会人 / 等候室 |
+| contact | `contact_search` / `lookup_by_email` / `lookup_by_phone` | 通讯录搜索（仅作会议邀请前置） |
+| control | `control_call` / `control_kick` | 会中控制：呼叫 / 踢出 |
+| tshoot | `tshoot_feedback` | 反馈工具问题给平台 |
+
+> **注意**：所有 tool 返回的数据已做字段转换（时间戳→ISO 日期、状态码→中文），与 CLI 输出一致。
+
+---
+
 ## 全局标志
 
 所有命令均支持以下全局标志：
