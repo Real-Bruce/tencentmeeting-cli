@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"tmeet/internal"
 	"tmeet/internal/config"
 	"tmeet/internal/exception"
@@ -46,6 +47,95 @@ func (s *Server) registerTools() {
 // ServeStdio 启动 stdio 传输，阻塞至 client 断开。
 func (s *Server) ServeStdio() error {
 	return server.ServeStdio(s.mcpSrv)
+}
+
+// ServeStreamableHTTP 启动 Streamable HTTP 传输（MCP 2025-03-26 规范）。
+// 适合 Linux 服务器部署，远程 AI 客户端通过 HTTP URL 接入。
+// 客户端连接地址为 http(s)://<host>:<addr>/<endpoint>。
+func (s *Server) ServeStreamableHTTP(opts ServeHTTPOpts) error {
+	transportOpts := []server.StreamableHTTPOption{
+		server.WithEndpointPath(opts.Endpoint),
+	}
+	if opts.TLSCert != "" && opts.TLSKey != "" {
+		transportOpts = append(transportOpts, server.WithTLSCert(opts.TLSCert, opts.TLSKey))
+	}
+
+	httpSrv := server.NewStreamableHTTPServer(s.mcpSrv, transportOpts...)
+	handler := authMiddleware(httpSrv, opts.APIKey)
+
+	srv := &http.Server{
+		Addr:    opts.Addr,
+		Handler: handler,
+	}
+
+	log.Infof(context.Background(), "tmeet mcp streamable-http server listening on %s%s", opts.Addr, opts.Endpoint)
+	if opts.TLSCert != "" && opts.TLSKey != "" {
+		return srv.ListenAndServeTLS(opts.TLSCert, opts.TLSKey)
+	}
+	return srv.ListenAndServe()
+}
+
+// ServeSSE 启动 SSE 传输（旧版 MCP 规范，兼容部分老客户端）。
+// 客户端连接 SSE 端点 http(s)://<host>:<addr>/sse 获取会话，再向 /message 发送请求。
+func (s *Server) ServeSSE(opts ServeHTTPOpts) error {
+	sseOpts := []server.SSEOption{
+		server.WithSSEEndpoint("/sse"),
+		server.WithMessageEndpoint("/message"),
+	}
+	if opts.BaseURL != "" {
+		sseOpts = append(sseOpts, server.WithBaseURL(opts.BaseURL))
+	}
+
+	sseSrv := server.NewSSEServer(s.mcpSrv, sseOpts...)
+	mux := http.NewServeMux()
+	mux.Handle("/sse", authMiddleware(sseSrv.SSEHandler(), opts.APIKey))
+	mux.Handle("/message", authMiddleware(sseSrv.MessageHandler(), opts.APIKey))
+
+	srv := &http.Server{
+		Addr:    opts.Addr,
+		Handler: mux,
+	}
+
+	log.Infof(context.Background(), "tmeet mcp sse server listening on %s (sse: /sse, message: /message)", opts.Addr)
+	if opts.TLSCert != "" && opts.TLSKey != "" {
+		return srv.ListenAndServeTLS(opts.TLSCert, opts.TLSKey)
+	}
+	return srv.ListenAndServe()
+}
+
+// ServeHTTPOpts 是 HTTP 传输的部署选项。
+type ServeHTTPOpts struct {
+	// Addr 监听地址，如 ":8080" 或 "0.0.0.0:8080"。
+	Addr string
+	// Endpoint 端点路径（仅 StreamableHTTP），默认 "/mcp"。
+	Endpoint string
+	// BaseURL 对外可访问的基础 URL（仅 SSE，反向代理后端时用），如 "https://tmeet.example.com"。
+	BaseURL string
+	// APIKey Bearer token 鉴权。非空时客户端必须在 Authorization 头传 "Bearer <key>"。留空则不鉴权。
+	APIKey string
+	// TLSCert TLS 证书文件路径（可选）。
+	TLSCert string
+	// TLSKey TLS 私钥文件路径（可选）。
+	TLSKey string
+}
+
+// authMiddleware 在 APIKey 非空时校验 Authorization: Bearer <key> 头。
+// APIKey 为空时直接放行（本地开发场景）。
+func authMiddleware(handler http.Handler, apiKey string) http.Handler {
+	if apiKey == "" {
+		return handler
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		expected := "Bearer " + apiKey
+		if auth != expected {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","error":{"code":-32001,"message":"unauthorized: invalid or missing API key"}}`))
+			return
+		}
+		handler.ServeHTTP(w, r)
+	})
 }
 
 // toolFunc 是业务 tool 的核心签名：入参为已绑定好的 params，返回 result.Result。
