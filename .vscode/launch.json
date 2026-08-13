@@ -1,0 +1,97 @@
+{
+    // 调试 tmeet CLI。program 指向 workspaceFolder（main.go 所在目录），
+    // 不注入 ldflags，Version 默认 "dev"，不影响功能调试。
+    // 切换不同 configuration 即可调试不同子命令。
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Login tmeet (auth login --no-browser)",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}",
+            "args": ["auth", "login", "--no-browser"]
+        },
+        {
+            "name": "Logout tmeet",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}",
+            "args": ["auth", "logout"]
+        },
+        {
+            "name": "Launch tmeet (auth status)",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}",
+            "args": ["auth", "status"]
+        },
+        {
+            "name": "Launch tmeet (meeting list)",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}",
+            "args": ["meeting", "list"]
+        },
+        {
+            "name": "Launch tmeet (record list by meeting-id)",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}",
+            "args": ["record", "list", "--meeting-id", "6953553464429888300"]
+        },
+        {
+            "name": "Launch tmeet (-V version)",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}",
+            "args": ["-V"]
+        },
+        {
+            // ── 日常调试入口 ──
+            // 每次想跑不同命令时，直接改下面的 args 数组 → 保存 → F5 即可。
+            // VSCode 不会重启，保存即生效。每个数组元素对应一个参数（含空格的值要单独成一项）。
+            //
+            // 常见示例：
+            //   ["auth", "status"]
+            //   ["meeting", "list", "--format", "json-pretty"]
+            //   ["meeting", "list", "--start", "2026-08-01T00:00+08:00", "--end", "2026-08-07T23:59+08:00"]
+            //   ["meeting", "get", "--meeting-id", "6953553464429888300"]
+            //   ["record", "list", "--meeting-id", "6953553464429888300"]
+            //   ["record", "smart-minutes", "--record-file-id", "file_abc123"]
+            //   ["contact", "search", "--username", "张三"]
+            //   ["report", "participants", "--meeting-id", "6953553464429888300"]
+            "name": "Launch tmeet (custom args, edit before F5)",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}",
+            "args": ["meeting", "list"]
+        },
+        {
+            // ── MCP server 调试（交互式 stdio）──
+            // F5 启动后 tmeet mcp 在集成终端等待 stdin 输入。
+            //
+            // 用法：
+            //   1. 打开 .vscode/mcp-input.txt
+            //   2. 全选复制（Ctrl+A Ctrl+C）
+            //   3. 在集成终端里粘贴（Ctrl+V）→ 每行一条 JSON-RPC 消息
+            //   4. server 逐行处理后输出响应，命中断点
+            //
+            // 改 mcp-input.txt 里的 tools/call name + arguments 可测不同 tool。
+            // console 必须是 integratedTerminal（internalConsole 不支持 stdin）。
+            "name": "MCP server (interactive stdio)",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}",
+            "args": ["mcp"],
+            "console": "integratedTerminal"
+        }
+    ]
+}
