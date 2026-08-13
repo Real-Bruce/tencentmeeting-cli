@@ -1,16 +1,11 @@
 package meeting
 
 import (
-	"net/http"
-	"strconv"
 	"tmeet/internal"
 	"tmeet/internal/cmdutil"
 	middleWare "tmeet/internal/cmdutil/middleware"
-	"tmeet/internal/core/thttp"
-	"tmeet/internal/exception"
+	meeting "tmeet/internal/meeting"
 	"tmeet/internal/output"
-	restProxy "tmeet/internal/proxy/rest-proxy"
-	"tmeet/internal/utils"
 
 	"github.com/spf13/cobra"
 )
@@ -49,72 +44,18 @@ func newListCmd(tmeet *internal.Tmeet) *cobra.Command {
 }
 
 func (o *ListOptions) Run(cmd *cobra.Command, args []string) error {
-	queryParams := thttp.QueryParams{}
-	queryParams.Set("userid", o.tmeet.UserConfig.OpenId)
-	queryParams.Set("instanceid", "1") // PC, fixed value
-
-	// page handler
-	// special page-size max，not 30
-	pageSize, err := cmdutil.ClampingPageSize(cmd, o.PageSize, 20)
-	if err != nil {
-		return err
-	}
-	queryParams.Set("page_size", strconv.Itoa(pageSize))
-	queryParams.Set("page_token", o.PageToken)
-	queryParams.Set("page_type", strconv.Itoa(cmdutil.PageTypeToken))
-
-	// Filter meeting_info_list by the requested start/end time range.
-	var filterStart, filterEnd int64
-	if o.Pos != "" {
-		posTs, err := utils.ISO8601ToTimeStamp(o.Pos)
-		if err != nil {
-			return exception.InvalidArgsError.With("--start format error: %v", err)
-		}
-		filterStart = posTs
-		if o.PageToken == "" {
-			queryParams.Set("pos", strconv.FormatInt(posTs, 10))
-		}
-	}
-	if o.Cursory != "" {
-		cursoryTs, err := utils.ISO8601ToTimeStamp(o.Cursory)
-		if err != nil {
-			return exception.InvalidArgsError.With("--end format error: %v", err)
-		}
-		// Millisecond-level timestamp, needs conversion.
-		filterEnd = cursoryTs
-	}
-	if o.IsShowAllSubMeetings != 0 {
-		queryParams.Set("is_show_all_sub_meetings", strconv.Itoa(o.IsShowAllSubMeetings))
-	}
-
-	req := &thttp.Request{
-		ApiURI:      "/v1/meetings",
-		QueryParams: queryParams,
-	}
-	rsp, err := restProxy.RequestProxy(cmd.Context(), http.MethodGet, o.tmeet, req)
+	r, err := meeting.List(cmd.Context(), o.tmeet, meeting.ListParams{
+		Start:      o.Pos,
+		End:        o.Cursory,
+		ShowAllSub: o.IsShowAllSubMeetings,
+		PageToken:  o.PageToken,
+		PageSize:   o.PageSize,
+	})
 	if err != nil {
 		return err
 	}
 
-	if filterStart > 0 || filterEnd > 0 {
-		rsp.Data = string(utils.FilterMeetingsByTimeRange(
-			[]byte(rsp.Data), "meeting_info_list", "start_time", "end_time", filterStart, filterEnd))
-	}
-
-	convertMap := map[string]utils.FieldConverter{
-		"start_time":               utils.TimestampConverter,
-		"end_time":                 utils.TimestampConverter,
-		"meeting_info_list.status": utils.MeetingStatusConverter,
-		"meeting_type":             utils.MeetingTypeConverter,
-		"recurring_type":           utils.MeetingRecurringTypeConverter,
-		"until_date":               utils.TimestampConverter,
-		"until_type":               utils.MeetingRecurringUntilTypeConverter,
-		"join_meeting_role":        utils.MeetingUserJoinRoleConverter,
-		"only_user_join_type":      utils.MeetingJoinTypeConverter,
-		"is_show_all_sub_meetings": utils.ShowAllSubMeetingsConverter,
-	}
-	output.FormatPrint(cmd, rsp.TraceId, rsp.Message, rsp.Data,
-		output.WithCompact(middleWare.GetCompactFields(cmd.Context())),
-		output.WithConvert(convertMap))
+	output.FormatPrint(cmd, r.TraceId, r.Message, r.Data,
+		output.WithCompact(middleWare.GetCompactFields(cmd.Context())))
 	return nil
 }

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"strings"
 	"tmeet/cmd/auth"
 	"tmeet/cmd/contact"
@@ -31,7 +30,7 @@ var Version = "dev"
 func Execute() (exitCode int) {
 	tmeet, err := internal.NewTmeet()
 	if err != nil {
-		output.PrintErrorf(nil, fmt.Sprintf("failed to initialize Tmeet: %v", err))
+		output.PrintErrorf(nil, "failed to initialize Tmeet: %v", err)
 		return 1
 	}
 
@@ -109,6 +108,8 @@ func Execute() (exitCode int) {
 	rootCmd.AddCommand(control.NewBaseCmd(tmeet))
 	// Add subcommand: tshoot
 	rootCmd.AddCommand(tshoot.NewBaseCmd(tmeet))
+	// Add subcommand: mcp (Model Context Protocol server)
+	rootCmd.AddCommand(newMcpCmd(tmeet))
 	err = rootCmd.Execute()
 	if err != nil {
 		log.Errorf(rootCmd.Context(), "execute failed: %v", err)

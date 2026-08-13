@@ -88,7 +88,8 @@ func FormatPrint(cmd *cobra.Command, traceId, message, data string, opts ...Opti
 	default:
 		b, _ = marshalNoEscape(fo, false)
 	}
-	PrintInfof(cmd, string(b))
+	// 用 "%s" 显式占位，避免把含 % 的 JSON 当作格式串（vet 报错 + 运行期 %!(MISSING)）。
+	PrintInfof(cmd, "%s", string(b))
 }
 
 // GetFormat gets the format.
