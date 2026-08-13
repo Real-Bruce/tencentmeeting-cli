@@ -1,14 +1,11 @@
 package record
 
 import (
-	"net/http"
 	"tmeet/internal"
 	"tmeet/internal/cmdutil"
 	middleWare "tmeet/internal/cmdutil/middleware"
-	"tmeet/internal/core/thttp"
 	"tmeet/internal/output"
-	restProxy "tmeet/internal/proxy/rest-proxy"
-	"tmeet/internal/utils"
+	record "tmeet/internal/record"
 
 	"github.com/spf13/cobra"
 )
@@ -46,36 +43,16 @@ func newTranscriptGetCmd(tmeet *internal.Tmeet) *cobra.Command {
 }
 
 func (o *TranscriptsGetOptions) Run(cmd *cobra.Command, args []string) error {
-	queryParams := thttp.QueryParams{}
-	queryParams.Set("operator_id", o.tmeet.UserConfig.OpenId)
-	queryParams.Set("operator_id_type", "2") // OpenId
-	queryParams.Set("record_file_id", o.RecordFileID)
-
-	if o.MeetingID != "" {
-		queryParams.Set("meeting_id", o.MeetingID)
-	}
-	if o.Pid != "" {
-		queryParams.Set("pid", o.Pid)
-	}
-	if o.Limit != "" {
-		queryParams.Set("limit", o.Limit)
-	}
-
-	req := &thttp.Request{
-		ApiURI:      "/v1/records/mcp/transcripts/details",
-		QueryParams: queryParams,
-	}
-	rsp, err := restProxy.RequestProxy(cmd.Context(), http.MethodGet, o.tmeet, req)
+	r, err := record.TranscriptGet(cmd.Context(), o.tmeet, record.TranscriptGetParams{
+		RecordFileID: o.RecordFileID,
+		MeetingID:    o.MeetingID,
+		Pid:          o.Pid,
+		Limit:        o.Limit,
+	})
 	if err != nil {
 		return err
 	}
-
-	convertMap := map[string]utils.FieldConverter{
-		"start_time": utils.HHMMSSConverter,
-		"end_time":   utils.HHMMSSConverter,
-	}
-	output.FormatPrint(cmd, rsp.TraceId, rsp.Message, rsp.Data,
-		output.WithCompact(middleWare.GetCompactFields(cmd.Context())),
-		output.WithConvert(convertMap))
+	output.FormatPrint(cmd, r.TraceId, r.Message, r.Data,
+		output.WithCompact(middleWare.GetCompactFields(cmd.Context())))
 	return nil
 }

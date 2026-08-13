@@ -2,21 +2,13 @@ package contact
 
 import (
 	"fmt"
-	"net/http"
 	"tmeet/internal"
 	"tmeet/internal/cmdutil"
 	middleWare "tmeet/internal/cmdutil/middleware"
-	"tmeet/internal/core/thttp"
-	"tmeet/internal/exception"
+	contact "tmeet/internal/contact"
 	"tmeet/internal/output"
-	restProxy "tmeet/internal/proxy/rest-proxy"
-	"tmeet/internal/utils"
 
 	"github.com/spf13/cobra"
-)
-
-const (
-	maxPhonesPerLookup = 50 // Maximum number of phone numbers allowed in a single lookup
 )
 
 // LookupByPhoneOptions holds the options for looking up users by phone.
@@ -41,9 +33,8 @@ func newLookupByPhoneCmd(tmeet *internal.Tmeet) *cobra.Command {
 	cmd.Flags().StringSliceVar(&opts.Phones, "phones", []string{}, fmt.Sprintf(
 		"phone numbers to look up, comma-separated or repeat the flag, max %d"+
 			"\neg. --phones 13800138000,13900139000 or "+
-			"--phones 13800138000 --phones 13900139000 (required)", maxPhonesPerLookup))
+			"--phones 13800138000 --phones 13900139000 (required)", contact.LookupByPhoneMax))
 
-	// mark required flags
 	_ = cmd.MarkFlagRequired("phones")
 
 	return cmd
@@ -51,34 +42,13 @@ func newLookupByPhoneCmd(tmeet *internal.Tmeet) *cobra.Command {
 
 // Run executes the lookup by phone command.
 func (o *LookupByPhoneOptions) Run(cmd *cobra.Command, args []string) error {
-	// Validate phone number count (maximum common.maxPhonesPerLookup)
-	if len(o.Phones) > maxPhonesPerLookup {
-		return exception.InvalidArgsError.With("phone numbers exceed maximum limit of %d", maxPhonesPerLookup)
-	}
-
-	// Validate phone number format
-	for _, phone := range o.Phones {
-		if err := utils.ValidatePhone(phone); err != nil {
-			return err
-		}
-	}
-
-	body := map[string]interface{}{
-		"operator_id":      o.tmeet.UserConfig.OpenId,
-		"operator_id_type": 2, // OpenId
-		"users_phone":      o.Phones,
-	}
-
-	req := &thttp.Request{
-		ApiURI: "/v1/contacts/members/lookup-by-phone",
-		Body:   body,
-	}
-	rsp, err := restProxy.RequestProxy(cmd.Context(), http.MethodPost, o.tmeet, req)
+	r, err := contact.LookupByPhone(cmd.Context(), o.tmeet, contact.LookupByPhoneParams{
+		Phones: o.Phones,
+	})
 	if err != nil {
 		return err
 	}
-
-	output.FormatPrint(cmd, rsp.TraceId, rsp.Message, rsp.Data,
+	output.FormatPrint(cmd, r.TraceId, r.Message, r.Data,
 		output.WithCompact(middleWare.GetCompactFields(cmd.Context())))
 	return nil
 }

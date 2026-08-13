@@ -40,7 +40,7 @@ func List(ctx context.Context, tmeet *internal.Tmeet, p ListParams) (*result.Res
 	queryParams.Set("instanceid", "1") // PC, fixed value
 
 	// page handler, special page-size max 20
-	pageSize, err := clampPageSize(p.PageSize, pageSizeMaxMeetings)
+	pageSize, err := cmdutil.ClampPageSize(p.PageSize, pageSizeMaxMeetings)
 	if err != nil {
 		return nil, err
 	}
@@ -106,17 +106,4 @@ func List(ctx context.Context, tmeet *internal.Tmeet, p ListParams) (*result.Res
 		TraceId: rsp.TraceId,
 		Message: rsp.Message,
 	}, nil
-}
-
-// clampPageSize 校验并钳制 page-size，与 cmdutil.ClampingPageSize 等价但不依赖 cobra。
-// pageSize < 1 返回错误；超过 max 钳制为 max（静默，不打印告警，告警属于 CLI 层关注）。
-func clampPageSize(pageSize, max int) (int, error) {
-	if pageSize < 1 {
-		return 0, exception.InvalidArgsError.With(
-			"illegal page size, must larger equal than 1 and less equal than %d", max)
-	}
-	if pageSize > max {
-		return max, nil
-	}
-	return pageSize, nil
 }

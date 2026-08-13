@@ -1,14 +1,11 @@
 package control
 
 import (
-	"net/http"
 	"tmeet/internal"
 	"tmeet/internal/cmdutil"
 	middleWare "tmeet/internal/cmdutil/middleware"
-	"tmeet/internal/core/thttp"
-	"tmeet/internal/exception"
+	control "tmeet/internal/control"
 	"tmeet/internal/output"
-	restProxy "tmeet/internal/proxy/rest-proxy"
 
 	"github.com/spf13/cobra"
 )
@@ -32,13 +29,11 @@ func newCallCmd(tmeet *internal.Tmeet) *cobra.Command {
 		),
 	}
 
-	// fill flags
 	cmd.Flags().StringVar(&opts.MeetingID, "meeting-id", "", "meeting ID (required)")
 	cmd.Flags().StringSliceVar(&opts.Users, "users", nil,
 		"user open_id list to call, comma-separated or repeat the flag, max 20"+
 			"eg. --users open_id1,open_id2 or --users open_id1 --users open_id2 (required)")
 
-	// mark required
 	_ = cmd.MarkFlagRequired("meeting-id")
 	_ = cmd.MarkFlagRequired("users")
 
@@ -47,33 +42,13 @@ func newCallCmd(tmeet *internal.Tmeet) *cobra.Command {
 
 // Run executes the call command.
 func (o *CallOptions) Run(cmd *cobra.Command, args []string) error {
-	if len(o.Users) == 0 {
-		return exception.InvalidArgsError.With("--users is required")
-	}
-
-	callList, err := cmdutil.PackageMeetingControlUsers("--users", o.Users)
+	r, err := control.Call(cmd.Context(), o.tmeet, control.CallParams{
+		MeetingID: o.MeetingID,
+		Users:     o.Users,
+	})
 	if err != nil {
 		return err
 	}
-
-	params := map[string]interface{}{
-		"operator_id":      o.tmeet.UserConfig.OpenId,
-		"operator_id_type": 2, // OpenId
-		"users":            callList,
-	}
-
-	req := &thttp.Request{
-		ApiURI: "/v1/meetings/{meeting_id}/batch-call",
-		Body:   params,
-		PathParams: thttp.PathParams{
-			"meeting_id": o.MeetingID,
-		},
-	}
-	rsp, err := restProxy.RequestProxy(cmd.Context(), http.MethodPost, o.tmeet, req)
-	if err != nil {
-		return err
-	}
-
-	output.FormatPrint(cmd, rsp.TraceId, rsp.Message, rsp.Data)
+	output.FormatPrint(cmd, r.TraceId, r.Message, r.Data)
 	return nil
 }

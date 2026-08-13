@@ -41,7 +41,7 @@ func Search(ctx context.Context, tmeet *internal.Tmeet, p SearchParams) (*result
 	queryParams.Set("operator_id_type", "2") // OpenId
 
 	// page handler
-	pageSize, err := clampPageSize(p.PageSize, cmdutil.PageSizeMaxMeetings)
+	pageSize, err := cmdutil.ClampPageSize(p.PageSize, cmdutil.PageSizeMaxMeetings)
 	if err != nil {
 		return nil, err
 	}
@@ -95,11 +95,7 @@ func Search(ctx context.Context, tmeet *internal.Tmeet, p SearchParams) (*result
 	}
 	data := string(utils.ConvertFields([]byte(rsp.Data), 10, convertMap))
 	// total_count=0 被剥离（服务器返回 0 通常是占位，不能展示给用户）。
-	if root, err := parseRoot(data); err == nil {
-		if tc, ok := root["total_count"].(float64); ok && tc == 0 {
-			data = string(utils.DeleteFields([]byte(data), 10, []string{"total_count"}))
-		}
-	}
+	data = result.StripTotalCountIfZero(data)
 
 	return &result.Result{
 		Data:    data,

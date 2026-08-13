@@ -1,14 +1,11 @@
 package control
 
 import (
-	"net/http"
 	"tmeet/internal"
 	"tmeet/internal/cmdutil"
 	middleWare "tmeet/internal/cmdutil/middleware"
-	"tmeet/internal/core/thttp"
-	"tmeet/internal/exception"
+	control "tmeet/internal/control"
 	"tmeet/internal/output"
-	restProxy "tmeet/internal/proxy/rest-proxy"
 
 	"github.com/spf13/cobra"
 )
@@ -35,7 +32,6 @@ func newKickCmd(tmeet *internal.Tmeet) *cobra.Command {
 		),
 	}
 
-	// fill flags
 	cmd.Flags().StringVar(&opts.MeetingID, "meeting-id", "", "meeting ID (required)")
 	cmd.Flags().BoolVar(&opts.AllowRejoin, "allow-rejoin", true,
 		"allow kicked-out members to rejoin the meeting, default true. "+
@@ -53,7 +49,6 @@ func newKickCmd(tmeet *internal.Tmeet) *cobra.Command {
 			"the total number of --users/--sip-users/--pstn-users is max 20. "+
 			"eg. --pstn-users ms_open_id1,ms_open_id2 or --pstn-users ms_open_id1 --pstn-users ms_open_id2")
 
-	// mark required
 	_ = cmd.MarkFlagRequired("meeting-id")
 	cmd.MarkFlagsOneRequired("users", "sip-users", "pstn-users")
 
@@ -62,51 +57,16 @@ func newKickCmd(tmeet *internal.Tmeet) *cobra.Command {
 
 // Run executes the kick command.
 func (o *KickOptions) Run(cmd *cobra.Command, args []string) error {
-	if len(o.Users) == 0 && len(o.SipUsers) == 0 && len(o.PstnUsers) == 0 {
-		return exception.InvalidArgsError.With("--users/--sip-users/--pstn-users, at least one of them is required")
-	}
-
-	if total := len(o.Users) + len(o.SipUsers) + len(o.PstnUsers); total > cmdutil.MeetingControlUsersListMax {
-		return exception.InvalidArgsError.With(
-			"the total number of --users/--sip-users/--pstn-users is too long, max is %d, got %d",
-			cmdutil.MeetingControlUsersListMax, total)
-	}
-
-	kickList, err := cmdutil.PackageMeetingControlUsers("--users", o.Users)
+	r, err := control.Kick(cmd.Context(), o.tmeet, control.KickParams{
+		MeetingID:   o.MeetingID,
+		AllowRejoin: o.AllowRejoin,
+		Users:       o.Users,
+		SipUsers:    o.SipUsers,
+		PstnUsers:   o.PstnUsers,
+	})
 	if err != nil {
 		return err
 	}
-	kickSipList, err := cmdutil.PackageMeetingControlSpecialUsers("--sip-users", o.SipUsers, 9)
-	if err != nil {
-		return err
-	}
-	kickPstnList, err := cmdutil.PackageMeetingControlSpecialUsers("--pstn-users", o.PstnUsers, 0)
-	if err != nil {
-		return err
-	}
-	kickList = append(kickList, kickSipList...)
-	kickList = append(kickList, kickPstnList...)
-
-	params := map[string]interface{}{
-		"operator_id":      o.tmeet.UserConfig.OpenId,
-		"operator_id_type": 2, // OpenId
-		"instanceid":       1, // PC, fixed value
-		"allow_rejoin":     o.AllowRejoin,
-		"users":            kickList,
-	}
-
-	req := &thttp.Request{
-		ApiURI: "/v1/real-control/meetings/{meeting_id}/kickout",
-		Body:   params,
-		PathParams: thttp.PathParams{
-			"meeting_id": o.MeetingID,
-		},
-	}
-	rsp, err := restProxy.RequestProxy(cmd.Context(), http.MethodPut, o.tmeet, req)
-	if err != nil {
-		return err
-	}
-
-	output.FormatPrint(cmd, rsp.TraceId, rsp.Message, rsp.Data)
+	output.FormatPrint(cmd, r.TraceId, r.Message, r.Data)
 	return nil
 }

@@ -36,6 +36,11 @@ func NewServer(tmeet *internal.Tmeet, version string) *Server {
 func (s *Server) registerTools() {
 	s.registerAuthTools()
 	s.registerMeetingTools()
+	s.registerRecordTools()
+	s.registerReportTools()
+	s.registerContactTools()
+	s.registerControlTools()
+	s.registerTshootTools()
 }
 
 // ServeStdio 启动 stdio 传输，阻塞至 client 断开。

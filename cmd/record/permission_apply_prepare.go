@@ -1,14 +1,11 @@
 package record
 
 import (
-	"net/http"
-
 	"tmeet/internal"
 	"tmeet/internal/cmdutil"
 	middleWare "tmeet/internal/cmdutil/middleware"
-	"tmeet/internal/core/thttp"
 	"tmeet/internal/output"
-	restProxy "tmeet/internal/proxy/rest-proxy"
+	record "tmeet/internal/record"
 
 	"github.com/spf13/cobra"
 )
@@ -43,24 +40,14 @@ func newPermissionApplyPrepareCmd(tmeet *internal.Tmeet) *cobra.Command {
 
 // Run run cmd
 func (o *PermissionApplyPrepareOptions) Run(cmd *cobra.Command, args []string) error {
-	queryParams := thttp.QueryParams{}
-	queryParams.Set("operator_id", o.tmeet.UserConfig.OpenId)
-	queryParams.Set("operator_id_type", "2") // OpenId
-	queryParams.Set("meeting_record_id", o.MeetingRecordID)
-	if o.MeetingID != "" {
-		queryParams.Set("meeting_id", o.MeetingID)
-	}
-
-	req := &thttp.Request{
-		ApiURI:      "/v1/records/mcp/permission-apply/prepare",
-		QueryParams: queryParams,
-	}
-	rsp, err := restProxy.RequestProxy(cmd.Context(), http.MethodGet, o.tmeet, req)
+	r, err := record.PermissionApplyPrepare(cmd.Context(), o.tmeet, record.PermissionApplyPrepareParams{
+		MeetingRecordID: o.MeetingRecordID,
+		MeetingID:       o.MeetingID,
+	})
 	if err != nil {
 		return err
 	}
-
-	output.FormatPrint(cmd, rsp.TraceId, rsp.Message, rsp.Data,
+	output.FormatPrint(cmd, r.TraceId, r.Message, r.Data,
 		output.WithCompact(middleWare.GetCompactFields(cmd.Context())))
 	return nil
 }

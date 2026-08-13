@@ -1,16 +1,11 @@
 package record
 
 import (
-	"net/http"
-	"strconv"
 	"tmeet/internal"
 	"tmeet/internal/cmdutil"
 	middleWare "tmeet/internal/cmdutil/middleware"
-	"tmeet/internal/core/thttp"
-	"tmeet/internal/exception"
 	"tmeet/internal/output"
-	restProxy "tmeet/internal/proxy/rest-proxy"
-	"tmeet/internal/utils"
+	record "tmeet/internal/record"
 
 	"github.com/spf13/cobra"
 )
@@ -50,85 +45,24 @@ func newListCmd(tmeet *internal.Tmeet) *cobra.Command {
 	cmd.Flags().StringVar(&opts.MeetingCode, "meeting-code", "",
 		"meeting code, one of the following groups is required(--start + --end or --meeting-id or --meeting-code)")
 
-	// mark deprecated flags
 	_ = cmd.Flags().MarkDeprecated("page", "use --page-token instead")
 	return cmd
 }
 
 func (o *ListOptions) Run(cmd *cobra.Command, args []string) error {
-	// Three groups of parameters, one is required:
-	//   1. --start + --end   (time range)
-	//   2. --meeting-id      (meeting id)
-	//   3. --meeting-code    (meeting code)
-	hasTimeRange := o.StartTime != "" && o.EndTime != ""
-	hasMeetingID := o.MeetingID != ""
-	hasMeetingCode := o.MeetingCode != ""
-
-	if !hasTimeRange && !hasMeetingID && !hasMeetingCode {
-		return exception.InvalidArgsError.With("one of the following groups is required:\n" +
-			"  --start + --end   (time range)\n" +
-			"  --meeting-id      (meeting id)\n" +
-			"  --meeting-code    (meeting code)")
-	}
-
-	queryParams := thttp.QueryParams{}
-	queryParams.Set("operator_id", o.tmeet.UserConfig.OpenId)
-	queryParams.Set("operator_id_type", "2") // OpenId
-
-	// pagination compatibility
-	pageValue, pageType := cmdutil.ChoosePageOrToken(o.Page, o.PageToken)
-	queryParams.Set("page_type", strconv.Itoa(pageType))
-	if pageType == cmdutil.PageTypeOld {
-		queryParams.Set("page", pageValue)
-	} else {
-		queryParams.Set("page_token", pageValue)
-	}
-	pageSize, err := cmdutil.ClampingPageSize(cmd, o.PageSize, cmdutil.PageSizeMaxRecords)
+	r, err := record.List(cmd.Context(), o.tmeet, record.ListParams{
+		StartTime:   o.StartTime,
+		EndTime:     o.EndTime,
+		Page:        o.Page,
+		PageSize:    o.PageSize,
+		PageToken:   o.PageToken,
+		MeetingID:   o.MeetingID,
+		MeetingCode: o.MeetingCode,
+	})
 	if err != nil {
 		return err
 	}
-	queryParams.Set("page_size", strconv.Itoa(pageSize))
-
-	if o.MeetingID != "" {
-		queryParams.Set("meeting_id", o.MeetingID)
-	}
-	if o.MeetingCode != "" {
-		queryParams.Set("meeting_code", cmdutil.FormatMeetingCode(o.MeetingCode))
-	}
-	if o.StartTime != "" {
-		startTime, err := utils.ISO8601ToTimeStamp(o.StartTime)
-		if err != nil {
-			return exception.InvalidArgsError.With("--start format error: %v", err)
-		}
-		queryParams.Set("start_time", strconv.FormatInt(startTime, 10))
-	}
-	if o.EndTime != "" {
-		endTime, err := utils.ISO8601ToTimeStamp(o.EndTime)
-		if err != nil {
-			return exception.InvalidArgsError.With("--end format error: %v", err)
-		}
-		queryParams.Set("end_time", strconv.FormatInt(endTime, 10))
-	}
-
-	req := &thttp.Request{
-		ApiURI:      "/v1/mcp/records",
-		QueryParams: queryParams,
-	}
-	rsp, err := restProxy.RequestProxy(cmd.Context(), http.MethodGet, o.tmeet, req)
-	if err != nil {
-		return err
-	}
-
-	convertMap := map[string]utils.FieldConverter{
-		"media_start_time":  utils.TimestampConverter,
-		"record_start_time": utils.TimestampConverter,
-		"record_end_time":   utils.TimestampConverter,
-		"state":             utils.RecordStateConverter,
-		"record_type":       utils.RecordTypeConverter,
-	}
-	output.FormatPrint(cmd, rsp.TraceId, rsp.Message, rsp.Data,
-		output.WithCompact(middleWare.GetCompactFields(cmd.Context())),
-		output.WithConvert(convertMap),
-		output.WithTotalCountLogic())
+	output.FormatPrint(cmd, r.TraceId, r.Message, r.Data,
+		output.WithCompact(middleWare.GetCompactFields(cmd.Context())))
 	return nil
 }

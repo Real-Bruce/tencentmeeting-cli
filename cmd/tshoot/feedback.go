@@ -1,23 +1,13 @@
 package tshoot
 
 import (
-	"net/http"
 	"tmeet/internal"
 	"tmeet/internal/cmdutil"
 	middleWare "tmeet/internal/cmdutil/middleware"
-	"tmeet/internal/core/thttp"
 	"tmeet/internal/output"
-	restProxy "tmeet/internal/proxy/rest-proxy"
-	"tmeet/internal/utils"
+	tshoot "tmeet/internal/tshoot"
 
 	"github.com/spf13/cobra"
-)
-
-// Character length limits for feedback fields.
-const (
-	maxIntentLen       = 200
-	maxActionsTriedLen = 500
-	maxResultLen       = 500
 )
 
 // FeedbackOptions is the options for feedback.
@@ -56,7 +46,6 @@ func newFeedbackCmd(tmeet *internal.Tmeet) *cobra.Command {
 	cmd.Flags().StringVar(&opts.ToolName, "tool-name", "", "tool/command name used")
 	cmd.Flags().StringVar(&opts.ErrorCode, "error-code", "", "error code returned by the tool")
 
-	// mark required flags
 	_ = cmd.MarkFlagRequired("category")
 	_ = cmd.MarkFlagRequired("intent")
 
@@ -65,39 +54,17 @@ func newFeedbackCmd(tmeet *internal.Tmeet) *cobra.Command {
 
 // Run executes the feedback command.
 func (o *FeedbackOptions) Run(cmd *cobra.Command, args []string) error {
-	// validate field length limits
-	if err := utils.CharacterLimit("--intent", o.Intent, maxIntentLen); err != nil {
-		return err
-	}
-	if err := utils.CharacterLimit("--actions-tried", o.ActionsTried, maxActionsTriedLen); err != nil {
-		return err
-	}
-	if err := utils.CharacterLimit("--result", o.Result, maxResultLen); err != nil {
-		return err
-	}
-
-	// feedback to the server
-	params := map[string]interface{}{
-		"operator_id":      o.tmeet.UserConfig.OpenId,
-		"operator_id_type": "2", // OpenId
-		"category":         o.Category,
-		"intent":           o.Intent,
-		"actions_tried":    o.ActionsTried,
-		"result":           o.Result,
-		"tool_name":        o.ToolName,
-		"error_code":       o.ErrorCode,
-		"from_source":      "CLI", // fixed
-	}
-
-	req := &thttp.Request{
-		ApiURI: "/v1/api/feedback",
-		Body:   params,
-	}
-	rsp, err := restProxy.RequestProxy(cmd.Context(), http.MethodPost, o.tmeet, req)
+	r, err := tshoot.Feedback(cmd.Context(), o.tmeet, tshoot.FeedbackParams{
+		Category:     o.Category,
+		Intent:       o.Intent,
+		ActionsTried: o.ActionsTried,
+		Result:       o.Result,
+		ToolName:     o.ToolName,
+		ErrorCode:    o.ErrorCode,
+	})
 	if err != nil {
 		return err
 	}
-
-	output.FormatPrint(cmd, rsp.TraceId, rsp.Message, rsp.Data)
+	output.FormatPrint(cmd, r.TraceId, r.Message, r.Data)
 	return nil
 }

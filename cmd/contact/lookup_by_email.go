@@ -2,21 +2,13 @@ package contact
 
 import (
 	"fmt"
-	"net/http"
 	"tmeet/internal"
 	"tmeet/internal/cmdutil"
 	middleWare "tmeet/internal/cmdutil/middleware"
-	"tmeet/internal/core/thttp"
-	"tmeet/internal/exception"
+	contact "tmeet/internal/contact"
 	"tmeet/internal/output"
-	restProxy "tmeet/internal/proxy/rest-proxy"
-	"tmeet/internal/utils"
 
 	"github.com/spf13/cobra"
-)
-
-const (
-	maxEmailsPerLookup = 50 // Maximum number of email addresses allowed in a single lookup
 )
 
 // LookupByEmailOptions holds the options for looking up users by email.
@@ -41,9 +33,8 @@ func newLookupByEmailCmd(tmeet *internal.Tmeet) *cobra.Command {
 	cmd.Flags().StringSliceVar(&opts.Emails, "emails", []string{}, fmt.Sprintf(
 		"email addresses to look up, comma-separated or repeat the flag, max %d"+
 			"\neg. --emails user1@example.com,user2@example.com or "+
-			"--emails user1@example.com --emails user2@example.com (required)", maxEmailsPerLookup))
+			"--emails user1@example.com --emails user2@example.com (required)", contact.LookupByEmailMax))
 
-	// mark required flags
 	_ = cmd.MarkFlagRequired("emails")
 
 	return cmd
@@ -51,34 +42,13 @@ func newLookupByEmailCmd(tmeet *internal.Tmeet) *cobra.Command {
 
 // Run executes the lookup by email command.
 func (o *LookupByEmailOptions) Run(cmd *cobra.Command, args []string) error {
-	// Validate email count (maximum common.maxEmailsPerLookup)
-	if len(o.Emails) > maxEmailsPerLookup {
-		return exception.InvalidArgsError.With("email addresses exceed maximum limit of %d", maxEmailsPerLookup)
-	}
-
-	// Validate email format
-	for _, email := range o.Emails {
-		if err := utils.ValidateEmail(email); err != nil {
-			return err
-		}
-	}
-
-	body := map[string]interface{}{
-		"operator_id":      o.tmeet.UserConfig.OpenId,
-		"operator_id_type": 2, // OpenId
-		"users_email":      o.Emails,
-	}
-
-	req := &thttp.Request{
-		ApiURI: "/v1/contacts/members/lookup-by-email",
-		Body:   body,
-	}
-	rsp, err := restProxy.RequestProxy(cmd.Context(), http.MethodPost, o.tmeet, req)
+	r, err := contact.LookupByEmail(cmd.Context(), o.tmeet, contact.LookupByEmailParams{
+		Emails: o.Emails,
+	})
 	if err != nil {
 		return err
 	}
-
-	output.FormatPrint(cmd, rsp.TraceId, rsp.Message, rsp.Data,
+	output.FormatPrint(cmd, r.TraceId, r.Message, r.Data,
 		output.WithCompact(middleWare.GetCompactFields(cmd.Context())))
 	return nil
 }

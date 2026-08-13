@@ -1,16 +1,11 @@
 package record
 
 import (
-	"net/http"
-	"strconv"
 	"tmeet/internal"
 	"tmeet/internal/cmdutil"
 	middleWare "tmeet/internal/cmdutil/middleware"
-	"tmeet/internal/core/thttp"
-	"tmeet/internal/exception"
 	"tmeet/internal/output"
-	restProxy "tmeet/internal/proxy/rest-proxy"
-	"tmeet/internal/utils"
+	record "tmeet/internal/record"
 
 	"github.com/spf13/cobra"
 )
@@ -68,65 +63,21 @@ func newSearchCmd(tmeet *internal.Tmeet) *cobra.Command {
 
 // Run executes the search command.
 func (o *SearchOptions) Run(cmd *cobra.Command, args []string) error {
-	queryParams := thttp.QueryParams{}
-	queryParams.Set("operator_id", o.tmeet.UserConfig.OpenId)
-	queryParams.Set("operator_id_type", "2") // OpenId
-	queryParams.Set("file_type", o.FileType)
-
-	// page handler
-	pageSize, err := cmdutil.ClampingPageSize(cmd, o.PageSize, cmdutil.PageSizeMaxRecords)
+	r, err := record.Search(cmd.Context(), o.tmeet, record.SearchParams{
+		Query:       o.Query,
+		QueryField:  o.QueryField,
+		FileType:    o.FileType,
+		MeetingID:   o.MeetingID,
+		MeetingCode: o.MeetingCode,
+		From:        o.From,
+		To:          o.To,
+		PageSize:    o.PageSize,
+		PageToken:   o.PageToken,
+	})
 	if err != nil {
 		return err
 	}
-	queryParams.Set("page_token", o.PageToken)
-	queryParams.Set("page_size", strconv.Itoa(pageSize))
-
-	// other params
-	if o.Query != "" {
-		if err := utils.CharacterLimit("--query", o.Query, maxQueryLen); err != nil {
-			return err
-		}
-		queryParams.Set("q", o.Query)
-		queryParams.Set("q_fields", o.QueryField)
-	}
-	if o.MeetingID != "" {
-		queryParams.Set("meeting_id", o.MeetingID)
-	}
-	if o.MeetingCode != "" {
-		queryParams.Set("meeting_code", cmdutil.FormatMeetingCode(o.MeetingCode))
-	}
-
-	// time range
-	var start, end int64
-	if o.From != "" {
-		start, err = utils.ISO8601ToTimeStamp(o.From)
-		if err != nil {
-			return exception.InvalidArgsError.With("--start format error: %v", err)
-		}
-		queryParams.Set("from", o.From)
-	}
-	if o.To != "" {
-		end, err = utils.ISO8601ToTimeStamp(o.To)
-		if err != nil {
-			return exception.InvalidArgsError.With("--end format error: %v", err)
-		}
-		queryParams.Set("to", o.To)
-	}
-	if start > 0 && end > 0 && start >= end {
-		return exception.InvalidArgsError.With("--start must be earlier than --end")
-	}
-
-	req := &thttp.Request{
-		ApiURI:      "/v1/mcp/records/search",
-		QueryParams: queryParams,
-	}
-	rsp, err := restProxy.RequestProxy(cmd.Context(), http.MethodGet, o.tmeet, req)
-	if err != nil {
-		return err
-	}
-
-	output.FormatPrint(cmd, rsp.TraceId, rsp.Message, rsp.Data,
-		output.WithCompact(middleWare.GetCompactFields(cmd.Context())),
-		output.WithTotalCountLogic())
+	output.FormatPrint(cmd, r.TraceId, r.Message, r.Data,
+		output.WithCompact(middleWare.GetCompactFields(cmd.Context())))
 	return nil
 }

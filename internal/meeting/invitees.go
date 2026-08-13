@@ -153,7 +153,7 @@ func InviteesList(ctx context.Context, tmeet *internal.Tmeet, p InviteesListPara
 		queryParams.Set("pos", pageValue)
 	} else {
 		queryParams.Set("page_token", pageValue)
-		pageSize, err := clampPageSize(p.PageSize, cmdutil.PageSizeMaxMeetings)
+		pageSize, err := cmdutil.ClampPageSize(p.PageSize, cmdutil.PageSizeMaxMeetings)
 		if err != nil {
 			return nil, err
 		}

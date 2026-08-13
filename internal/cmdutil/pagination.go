@@ -36,6 +36,22 @@ func ClampingPageSize(cmd *cobra.Command, pageSize, maxPageSize int) (int, error
 	return pageSize, nil
 }
 
+// ClampPageSize is the cobra-free variant of ClampingPageSize: it validates
+// and clamps page-size without depending on a cobra.Command. Used by pure
+// business functions (internal/<domain>) shared between cobra CLI and MCP.
+// pageSize < 1 returns an error; over max is silently clamped to max
+// (the "clamped" warning is a CLI-only concern, not surfaced here).
+func ClampPageSize(pageSize, maxPageSize int) (int, error) {
+	if pageSize < 1 {
+		return 0, exception.InvalidArgsError.With(
+			"illegal page size, must larger equal than 1 and less equal than %d", maxPageSize)
+	}
+	if pageSize > maxPageSize {
+		return maxPageSize, nil
+	}
+	return pageSize, nil
+}
+
 // ChoosePageOrToken picks the proper pagination field and value.
 // Since CLI v1.0.5 page_token is the unified pagination parameter; the legacy
 // page parameter is deprecated but still supported with lower priority, and

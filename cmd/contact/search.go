@@ -1,13 +1,11 @@
 package contact
 
 import (
-	"net/http"
 	"tmeet/internal"
 	"tmeet/internal/cmdutil"
 	middleWare "tmeet/internal/cmdutil/middleware"
-	"tmeet/internal/core/thttp"
+	contact "tmeet/internal/contact"
 	"tmeet/internal/output"
-	restProxy "tmeet/internal/proxy/rest-proxy"
 
 	"github.com/spf13/cobra"
 )
@@ -39,7 +37,6 @@ func newSearchCmd(tmeet *internal.Tmeet) *cobra.Command {
 	cmd.Flags().StringVar(&opts.DepartmentName, "department-name", "",
 		"department name to filter results when the username search returns too many matches")
 
-	// mark required flags
 	_ = cmd.MarkFlagRequired("username")
 
 	return cmd
@@ -47,24 +44,15 @@ func newSearchCmd(tmeet *internal.Tmeet) *cobra.Command {
 
 // Run executes the search contacts command.
 func (o *SearchOptions) Run(cmd *cobra.Command, args []string) error {
-	queryParams := thttp.QueryParams{}
-	queryParams.Set("username", o.Username)
-	queryParams.Set("job_title", o.JobTitle)
-	queryParams.Set("department_name", o.DepartmentName)
-	queryParams.Set("operator_id", o.tmeet.UserConfig.OpenId)
-	queryParams.Set("operator_id_type", "2") // OpenId
-
-	req := &thttp.Request{
-		ApiURI:      "/v1/contacts/members/search",
-		QueryParams: queryParams,
-	}
-	rsp, err := restProxy.RequestProxy(cmd.Context(), http.MethodGet, o.tmeet, req)
+	r, err := contact.Search(cmd.Context(), o.tmeet, contact.SearchParams{
+		Username:       o.Username,
+		JobTitle:       o.JobTitle,
+		DepartmentName: o.DepartmentName,
+	})
 	if err != nil {
 		return err
 	}
-
-	output.FormatPrint(cmd, rsp.TraceId, rsp.Message, rsp.Data,
-		output.WithCompact(middleWare.GetCompactFields(cmd.Context())),
-		output.WithContactSearchLogic())
+	output.FormatPrint(cmd, r.TraceId, r.Message, r.Data,
+		output.WithCompact(middleWare.GetCompactFields(cmd.Context())))
 	return nil
 }
