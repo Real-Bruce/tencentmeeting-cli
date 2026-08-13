@@ -1,13 +1,11 @@
 package meeting
 
 import (
-	"net/http"
 	"tmeet/internal"
 	"tmeet/internal/cmdutil"
 	middleWare "tmeet/internal/cmdutil/middleware"
-	"tmeet/internal/core/thttp"
+	meeting "tmeet/internal/meeting"
 	"tmeet/internal/output"
-	restProxy "tmeet/internal/proxy/rest-proxy"
 
 	"github.com/spf13/cobra"
 )
@@ -44,29 +42,14 @@ func newCancelCmd(tmeet *internal.Tmeet) *cobra.Command {
 }
 
 func (o *CancelOptions) Run(cmd *cobra.Command, args []string) error {
-	params := map[string]interface{}{
-		"userid":       o.tmeet.UserConfig.OpenId,
-		"reason_code":  0, // fixed value
-		"instanceid":   1, // PC, fixed value
-		"meetingId":    o.MeetingID,
-		"meeting_type": o.MeetingType,
-	}
-	if o.SubMeetingID != "" {
-		params["sub_meeting_id"] = o.SubMeetingID
-	}
-
-	req := &thttp.Request{
-		ApiURI: "/v1/meetings/{meetingId}/cancel",
-		Body:   params,
-		PathParams: thttp.PathParams{
-			"meetingId": o.MeetingID,
-		},
-	}
-	rsp, err := restProxy.RequestProxy(cmd.Context(), http.MethodPost, o.tmeet, req)
+	r, err := meeting.Cancel(cmd.Context(), o.tmeet, meeting.CancelParams{
+		MeetingID:    o.MeetingID,
+		SubMeetingID: o.SubMeetingID,
+		MeetingType:  o.MeetingType,
+	})
 	if err != nil {
 		return err
 	}
-
-	output.FormatPrint(cmd, rsp.TraceId, rsp.Message, rsp.Data)
+	output.FormatPrint(cmd, r.TraceId, r.Message, r.Data)
 	return nil
 }

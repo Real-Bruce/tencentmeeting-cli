@@ -1,46 +1,14 @@
 package meeting
 
 import (
-	"net/http"
-	"strconv"
-	"strings"
 	"tmeet/internal"
 	"tmeet/internal/cmdutil"
 	middleWare "tmeet/internal/cmdutil/middleware"
-	"tmeet/internal/core/thttp"
-	"tmeet/internal/exception"
+	meeting "tmeet/internal/meeting"
 	"tmeet/internal/output"
-	restProxy "tmeet/internal/proxy/rest-proxy"
-	"tmeet/internal/utils"
 
 	"github.com/spf13/cobra"
 )
-
-// Invitees mutation strategies for `meeting update --invitees-type`.
-// The CLI string maps to the integer enum `invitees_operate_type` expected
-// by the server:
-//
-
-// add     -> 1  add invitees
-// remove  -> 2  remove invitees
-// replace -> 3  replace all invitees
-const (
-	inviteesTypeReplace = "replace"
-	inviteesTypeAdd     = "add"
-	inviteesTypeRemove  = "remove"
-
-	inviteesOperateTypeAdd     = 1
-	inviteesOperateTypeRemove  = 2
-	inviteesOperateTypeReplace = 3
-)
-
-// inviteesOperateTypeMap maps the user-facing strategy string to the server
-// enum value for `invitees_operate_type`.
-var inviteesOperateTypeMap = map[string]int{
-	inviteesTypeReplace: inviteesOperateTypeReplace,
-	inviteesTypeAdd:     inviteesOperateTypeAdd,
-	inviteesTypeRemove:  inviteesOperateTypeRemove,
-}
 
 // UpdateOptions holds the options for updating a meeting.
 type UpdateOptions struct {
@@ -119,167 +87,53 @@ func (o *UpdateOptions) Hints(responseData string) []string {
 }
 
 func (o *UpdateOptions) Run(cmd *cobra.Command, args []string) error {
-	params := map[string]interface{}{
-		"userid":     o.tmeet.UserConfig.OpenId,
-		"instanceid": 1, // PC, fixed value
+	p := meeting.UpdateParams{
+		MeetingID:         o.MeetingID,
+		Subject:           o.Subject,
+		StartTime:         o.StartTime,
+		EndTime:           o.EndTime,
+		Password:          o.Password,
+		Timezone:          o.Timezone,
+		OnlyUserJoinType:  o.OnlyUserJoinType,
+		AutoInWaitingRoom: o.AutoInWaitingRoom,
+		SubMeetingID:      o.SubMeetingID,
+		Invitees:          o.Invitees,
+		InviteesType:      o.InviteesType,
 	}
-
-	// Optional fields: only set when user provides them.
+	// Changed() → 指针：CLI flag 显式设置才传给纯函数，与 MCP 的 nil 语义一致。
 	if cmd.Flags().Changed("meeting-type") {
-		params["meeting_type"] = o.MeetingType
+		p.MeetingType = &o.MeetingType
 	}
-	if o.Subject != "" {
-		params["subject"] = o.Subject
+	if cmd.Flags().Changed("recurring-type") {
+		p.RecurringType = &o.RecurringType
 	}
-	if o.Password != "" {
-		params["password"] = o.Password
+	if cmd.Flags().Changed("until-type") {
+		p.UntilType = &o.UntilType
 	}
-	if o.Timezone != "" {
-		params["timezone"] = o.Timezone
+	if cmd.Flags().Changed("until-count") {
+		p.UntilCount = &o.UntilCount
 	}
-	if o.StartTime != "" {
-		startTime, err := utils.ISO8601ToTimeStamp(o.StartTime)
-		if err != nil {
-			return exception.InvalidArgsError.With("--start format error: %v", err)
-		}
-		params["start_time"] = strconv.FormatInt(startTime, 10)
-	}
-	if o.EndTime != "" {
-		endTime, err := utils.ISO8601ToTimeStamp(o.EndTime)
-		if err != nil {
-			return exception.InvalidArgsError.With("--end format error: %v", err)
-		}
-		params["end_time"] = strconv.FormatInt(endTime, 10)
-	}
-	if o.MeetingType == 1 {
-		// Recurring meeting, add recurring parameters.
-		recurringRule, err := o.buildRecurringRule(cmd)
-		if err != nil {
-			return err
-		}
-		params["recurring_rule"] = recurringRule
-	}
-	// setting parameters
-	settings := make(map[string]interface{}, 0)
-	if o.OnlyUserJoinType > 0 {
-		settings["only_user_join_type"] = o.OnlyUserJoinType
-	}
-	if o.AutoInWaitingRoom {
-		settings["auto_in_waiting_room"] = o.AutoInWaitingRoom
+	if cmd.Flags().Changed("until-date") {
+		p.UntilDate = &o.UntilDate
 	}
 	if cmd.Flags().Changed("water-mark-type") {
-		if o.WaterMarkType != 2 {
-			settings["water_mark_type"] = o.WaterMarkType
-		}
-		settings["allow_screen_shared_watermark"] = o.WaterMarkType != 2
+		p.WaterMarkType = &o.WaterMarkType
 	}
 	if cmd.Flags().Changed("audio-watermark") {
-		settings["audio_watermark"] = o.AudioWatermark
+		p.AudioWatermark = &o.AudioWatermark
 	}
 	if cmd.Flags().Changed("auto-record-type") {
-		settings["auto_record_type"] = o.AutoRecordType
+		p.AutoRecordType = &o.AutoRecordType
 	}
 	if cmd.Flags().Changed("auto-asr") {
-		settings["auto_asr"] = o.AutoASR
-	}
-	if len(settings) > 0 {
-		params["settings"] = settings
+		p.AutoASR = &o.AutoASR
 	}
 
-	// Resolve --invitees / --invitees-type and inject into request body.
-	// The strategy is forwarded as `invitees_operate_type` and the userid
-	// list is sent verbatim; the server applies the mutation.
-	if err := o.applyInvitees(cmd, params); err != nil {
-		return err
-	}
-
-	req := &thttp.Request{
-		ApiURI: "/v1/meetings/" + o.MeetingID,
-		Body:   params,
-	}
-	rsp, err := restProxy.RequestProxy(cmd.Context(), http.MethodPut, o.tmeet, req)
+	r, err := meeting.Update(cmd.Context(), o.tmeet, p)
 	if err != nil {
 		return err
 	}
-
-	convertMap := map[string]utils.FieldConverter{
-		"start_time":          utils.TimestampConverter,
-		"end_time":            utils.TimestampConverter,
-		"only_user_join_type": utils.MeetingJoinTypeConverter,
-	}
-
-	output.FormatPrint(cmd, rsp.TraceId, rsp.Message, rsp.Data,
-		output.WithConvert(convertMap),
+	output.FormatPrint(cmd, r.TraceId, r.Message, r.Data,
 		output.WithHints(o.Hints))
-	return nil
-}
-
-// buildRecurringRule assembles the `recurring_rule` payload for a recurring
-// meeting update. When --sub-meeting-id is provided, only that single
-// sub-meeting's time is modified and it must not be combined with the
-// recurring-rule fields (--recurring-type / --until-type / --until-count /
-// --until-date); otherwise the whole recurring meeting is updated using the
-// recurring-rule fields.
-func (o *UpdateOptions) buildRecurringRule(cmd *cobra.Command) (map[string]interface{}, error) {
-	if o.SubMeetingID != "" {
-		conflicting := []string{"recurring-type", "until-type", "until-count", "until-date"}
-		for _, name := range conflicting {
-			if cmd.Flags().Changed(name) {
-				return nil, exception.InvalidArgsError.With(
-					"--sub-meeting-id cannot be used together with --%s: "+
-						"either update a single sub-meeting's time, or update the recurring rule", name)
-			}
-		}
-		return map[string]interface{}{"sub_meeting_id": o.SubMeetingID}, nil
-	}
-
-	recurringRule := make(map[string]interface{}, 4)
-	recurringRule["until_type"] = o.UntilType
-	recurringRule["until_count"] = o.UntilCount
-	recurringRule["recurring_type"] = o.RecurringType
-	if o.UntilDate != "" {
-		untilDate, err := utils.ISO8601ToTimeStamp(o.UntilDate)
-		if err != nil {
-			return nil, exception.InvalidArgsError.With("--until-date format error: %v", err)
-		}
-		recurringRule["until_date"] = untilDate
-	}
-	return recurringRule, nil
-}
-
-// applyInvitees validates --invitees / --invitees-type and writes the
-// resulting `invitees` and `invitees_operate_type` fields into params when
-// the user opts in. The two flags must be set together; the userid list is
-// only normalized (trim, dedup, drop empties) and forwarded as-is — the
-// server is responsible for merging/removing against the existing list.
-func (o *UpdateOptions) applyInvitees(cmd *cobra.Command, params map[string]interface{}) error {
-	inviteesSet := cmd.Flags().Changed("invitees")
-	typeSet := cmd.Flags().Changed("invitees-type")
-	if !inviteesSet && !typeSet {
-		return nil
-	}
-	if !typeSet {
-		return exception.InvalidArgsError.With(
-			"--invitees-type is required when --invitees is set (replace | add | remove)")
-	}
-	if !inviteesSet {
-		return exception.InvalidArgsError.With(
-			"--invitees is required when --invitees-type is set")
-	}
-
-	strategy := strings.ToLower(strings.TrimSpace(o.InviteesType))
-	operateType, ok := inviteesOperateTypeMap[strategy]
-	if !ok {
-		return exception.InvalidArgsError.With(
-			"--invitees-type must be one of: replace, add, remove (got %q)", o.InviteesType)
-	}
-
-	inviteesList, err := cmdutil.PackageApiInviteesUsers("--invitees", o.Invitees)
-	if err != nil {
-		return err
-	}
-
-	params["invitees"] = inviteesList
-	params["invitees_operate_type"] = operateType
 	return nil
 }

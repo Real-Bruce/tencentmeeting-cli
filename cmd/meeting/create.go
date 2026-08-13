@@ -1,16 +1,11 @@
 package meeting
 
 import (
-	"net/http"
-	"strconv"
 	"tmeet/internal"
 	"tmeet/internal/cmdutil"
 	middleWare "tmeet/internal/cmdutil/middleware"
-	"tmeet/internal/core/thttp"
-	"tmeet/internal/exception"
+	meeting "tmeet/internal/meeting"
 	"tmeet/internal/output"
-	restProxy "tmeet/internal/proxy/rest-proxy"
-	"tmeet/internal/utils"
 
 	"github.com/spf13/cobra"
 )
@@ -82,97 +77,40 @@ func (o *CreateOptions) Hints(responseData string) []string {
 }
 
 func (o *CreateOptions) Run(cmd *cobra.Command, args []string) error {
-	// Time conversion.
-	startTime, err := utils.ISO8601ToTimeStamp(o.StartTime)
-	if err != nil {
-		return exception.InvalidArgsError.With("--start format error: %v", err)
+	p := meeting.CreateParams{
+		Subject:           o.Subject,
+		StartTime:         o.StartTime,
+		EndTime:           o.EndTime,
+		Password:          o.Password,
+		Timezone:          o.Timezone,
+		MeetingType:       o.MeetingType,
+		OnlyUserJoinType:  o.OnlyUserJoinType,
+		AutoInWaitingRoom: o.AutoInWaitingRoom,
+		RecurringType:     o.RecurringType,
+		UntilType:         o.UntilType,
+		UntilCount:        o.UntilCount,
+		UntilDate:         o.UntilDate,
+		Invitees:          o.Invitees,
 	}
-	endTime, err := utils.ISO8601ToTimeStamp(o.EndTime)
-	if err != nil {
-		return exception.InvalidArgsError.With("--end format error: %v", err)
-	}
-
-	// Execute create meeting.
-	params := map[string]interface{}{
-		"subject":      o.Subject,
-		"start_time":   strconv.FormatInt(startTime, 10),
-		"end_time":     strconv.FormatInt(endTime, 10),
-		"password":     o.Password,
-		"timezone":     o.Timezone,
-		"meeting_type": o.MeetingType,
-		"type":         0, // scheduled meeting, fixed value
-		"instanceid":   1, // PC, fixed value
-		"userid":       o.tmeet.UserConfig.OpenId,
-	}
-	if o.MeetingType == 1 {
-		// Recurring meeting, add recurring parameters.
-		recurringRule := make(map[string]interface{}, 3)
-		recurringRule["until_type"] = o.UntilType
-		recurringRule["until_count"] = o.UntilCount
-		recurringRule["recurring_type"] = o.RecurringType
-		if o.UntilDate != "" {
-			untilDate, err := utils.ISO8601ToTimeStamp(o.UntilDate)
-			if err != nil {
-				output.PrintErrorf(cmd, "--until-date format error: %v", err)
-				return nil
-			}
-			recurringRule["until_date"] = untilDate
-		}
-		params["recurring_rule"] = recurringRule
-	}
-	// setting param
-	settings := make(map[string]interface{}, 0)
-	if o.OnlyUserJoinType > 0 {
-		settings["only_user_join_type"] = o.OnlyUserJoinType
-	}
-	if o.AutoInWaitingRoom {
-		settings["auto_in_waiting_room"] = o.AutoInWaitingRoom
-	}
+	// Changed() → 指针：CLI flag 显式设置才传给纯函数，与 MCP 的 nil 语义一致。
 	if cmd.Flags().Changed("water-mark-type") {
-		if o.WaterMarkType != 2 {
-			settings["water_mark_type"] = o.WaterMarkType
-		}
-		settings["allow_screen_shared_watermark"] = o.WaterMarkType != 2
+		p.WaterMarkType = &o.WaterMarkType
 	}
 	if cmd.Flags().Changed("audio-watermark") {
-		settings["audio_watermark"] = o.AudioWatermark
+		p.AudioWatermark = &o.AudioWatermark
 	}
 	if cmd.Flags().Changed("auto-record-type") {
-		settings["auto_record_type"] = o.AutoRecordType
+		p.AutoRecordType = &o.AutoRecordType
 	}
 	if cmd.Flags().Changed("auto-asr") {
-		settings["auto_asr"] = o.AutoASR
-	}
-	if len(settings) > 0 {
-		params["settings"] = settings
+		p.AutoASR = &o.AutoASR
 	}
 
-	// Invitees: validated, deduped and capped (max 100) by the shared helper.
-	if len(o.Invitees) > 0 {
-		invitees, err := cmdutil.PackageApiInviteesUsers("--invitees", o.Invitees)
-		if err != nil {
-			return err
-		}
-		params["invitees"] = invitees
-	}
-
-	req := &thttp.Request{
-		ApiURI: "/v1/meetings",
-		Body:   params,
-	}
-	rsp, err := restProxy.RequestProxy(cmd.Context(), http.MethodPost, o.tmeet, req)
+	r, err := meeting.Create(cmd.Context(), o.tmeet, p)
 	if err != nil {
 		return err
 	}
-
-	convertMap := map[string]utils.FieldConverter{
-		"start_time":          utils.TimestampConverter,
-		"end_time":            utils.TimestampConverter,
-		"only_user_join_type": utils.MeetingJoinTypeConverter,
-	}
-
-	output.FormatPrint(cmd, rsp.TraceId, rsp.Message, rsp.Data,
-		output.WithConvert(convertMap),
+	output.FormatPrint(cmd, r.TraceId, r.Message, r.Data,
 		output.WithHints(o.Hints))
 	return nil
 }

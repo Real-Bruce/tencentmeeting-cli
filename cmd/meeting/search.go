@@ -1,16 +1,11 @@
 package meeting
 
 import (
-	"net/http"
-	"strconv"
 	"tmeet/internal"
 	"tmeet/internal/cmdutil"
 	middleWare "tmeet/internal/cmdutil/middleware"
-	"tmeet/internal/core/thttp"
-	"tmeet/internal/exception"
+	meeting "tmeet/internal/meeting"
 	"tmeet/internal/output"
-	restProxy "tmeet/internal/proxy/rest-proxy"
-	"tmeet/internal/utils"
 
 	"github.com/spf13/cobra"
 )
@@ -46,8 +41,8 @@ func newSearchCmd(tmeet *internal.Tmeet) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&opts.Query, "query", "", "search keyword")
-	cmd.Flags().StringVar(&opts.QueryField, "query-field", "all", `search field for --query (e.g. 
-		subject: meeting subject; 
+	cmd.Flags().StringVar(&opts.QueryField, "query-field", "all", `search field for --query (e.g.
+		subject: meeting subject;
 		creator: creator's nickname/remark name,
 		note: user's note on the meeting
 		all: search all fields)`)
@@ -62,66 +57,19 @@ func newSearchCmd(tmeet *internal.Tmeet) *cobra.Command {
 
 // Run executes the search command.
 func (o *SearchOptions) Run(cmd *cobra.Command, args []string) error {
-	queryParams := thttp.QueryParams{}
-	queryParams.Set("operator_id", o.tmeet.UserConfig.OpenId)
-	queryParams.Set("operator_id_type", "2") // OpenId
-
-	// page handler
-	pageSize, err := cmdutil.ClampingPageSize(cmd, o.PageSize, cmdutil.PageSizeMaxMeetings)
+	r, err := meeting.Search(cmd.Context(), o.tmeet, meeting.SearchParams{
+		Query:       o.Query,
+		QueryField:  o.QueryField,
+		MeetingCode: o.MeetingCode,
+		From:        o.From,
+		To:          o.To,
+		PageSize:    o.PageSize,
+		PageToken:   o.PageToken,
+	})
 	if err != nil {
 		return err
 	}
-	queryParams.Set("page_token", o.PageToken)
-	queryParams.Set("page_size", strconv.Itoa(pageSize))
-
-	// other params
-	if o.Query != "" {
-		if err := utils.CharacterLimit("--query", o.Query, maxQueryLen); err != nil {
-			return err
-		}
-		queryParams.Set("q", o.Query)
-		queryParams.Set("q_fields", o.QueryField)
-	}
-	if o.MeetingCode != "" {
-		queryParams.Set("meeting_code", cmdutil.FormatMeetingCode(o.MeetingCode))
-	}
-
-	// time range
-	var start, end int64
-	if o.From != "" {
-		start, err = utils.ISO8601ToTimeStamp(o.From)
-		if err != nil {
-			return exception.InvalidArgsError.With("--start format error: %v", err)
-		}
-		queryParams.Set("from", o.From)
-	}
-	if o.To != "" {
-		end, err = utils.ISO8601ToTimeStamp(o.To)
-		if err != nil {
-			return exception.InvalidArgsError.With("--end format error: %v", err)
-		}
-		queryParams.Set("to", o.To)
-	}
-	if start > 0 && end > 0 && start >= end {
-		return exception.InvalidArgsError.With("--start must be earlier than --end")
-	}
-
-	req := &thttp.Request{
-		ApiURI:      "/v1/meetings/search-meetings",
-		QueryParams: queryParams,
-	}
-	rsp, err := restProxy.RequestProxy(cmd.Context(), http.MethodGet, o.tmeet, req)
-	if err != nil {
-		return err
-	}
-
-	convertMap := map[string]utils.FieldConverter{
-		"meetings.meeting_type": utils.MeetingTypeConverter,
-		"meetings.status":       utils.MeetingStatusInSearchConverter,
-	}
-	output.FormatPrint(cmd, rsp.TraceId, rsp.Message, rsp.Data,
-		output.WithCompact(middleWare.GetCompactFields(cmd.Context())),
-		output.WithConvert(convertMap),
-		output.WithTotalCountLogic())
+	output.FormatPrint(cmd, r.TraceId, r.Message, r.Data,
+		output.WithCompact(middleWare.GetCompactFields(cmd.Context())))
 	return nil
 }

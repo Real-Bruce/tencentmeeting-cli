@@ -1,16 +1,11 @@
 package meeting
 
 import (
-	"net/http"
-	"strconv"
 	"tmeet/internal"
 	"tmeet/internal/cmdutil"
 	middleWare "tmeet/internal/cmdutil/middleware"
-	"tmeet/internal/core/thttp"
-	"tmeet/internal/exception"
+	meeting "tmeet/internal/meeting"
 	"tmeet/internal/output"
-	restProxy "tmeet/internal/proxy/rest-proxy"
-	"tmeet/internal/utils"
 
 	"github.com/spf13/cobra"
 )
@@ -50,54 +45,17 @@ func newListEndedCmd(tmeet *internal.Tmeet) *cobra.Command {
 }
 
 func (o *ListEndedOptions) Run(cmd *cobra.Command, args []string) error {
-	queryParams := thttp.QueryParams{}
-
-	// pagination compatibility
-	pageValue, pageType := cmdutil.ChoosePageOrToken(o.Page, o.PageToken)
-	queryParams.Set("page_type", strconv.Itoa(pageType))
-	if pageType == cmdutil.PageTypeOld {
-		queryParams.Set("page", pageValue)
-	} else {
-		queryParams.Set("page_token", pageValue)
-	}
-	pageSize, err := cmdutil.ClampingPageSize(cmd, o.PageSize, cmdutil.PageSizeMaxMeetings)
+	r, err := meeting.ListEnded(cmd.Context(), o.tmeet, meeting.ListEndedParams{
+		StartTime: o.StartTime,
+		EndTime:   o.EndTime,
+		Page:      o.Page,
+		PageSize:  o.PageSize,
+		PageToken: o.PageToken,
+	})
 	if err != nil {
 		return err
 	}
-	queryParams.Set("page_size", strconv.Itoa(pageSize))
-
-	if o.StartTime != "" {
-		startTs, err := utils.ISO8601ToTimeStamp(o.StartTime)
-		if err != nil {
-			return exception.InvalidArgsError.With("--start format error: %v", err)
-		}
-		queryParams.Set("start_time", strconv.FormatInt(startTs, 10))
-	}
-	if o.EndTime != "" {
-		endTs, err := utils.ISO8601ToTimeStamp(o.EndTime)
-		if err != nil {
-			return exception.InvalidArgsError.With("--end format error: %v", err)
-		}
-		queryParams.Set("end_time", strconv.FormatInt(endTs, 10))
-	}
-
-	req := &thttp.Request{
-		ApiURI:      "/v1/history/meetings/{userid}",
-		QueryParams: queryParams,
-		PathParams:  thttp.PathParams{"userid": o.tmeet.UserConfig.OpenId},
-	}
-	rsp, err := restProxy.RequestProxy(cmd.Context(), http.MethodGet, o.tmeet, req)
-	if err != nil {
-		return err
-	}
-
-	convertMap := map[string]utils.FieldConverter{
-		"start_time":   utils.TimestampConverter,
-		"end_time":     utils.TimestampConverter,
-		"meeting_type": utils.MeetingTypeConverter,
-	}
-	output.FormatPrint(cmd, rsp.TraceId, rsp.Message, rsp.Data,
-		output.WithCompact(middleWare.GetCompactFields(cmd.Context())),
-		output.WithConvert(convertMap))
+	output.FormatPrint(cmd, r.TraceId, r.Message, r.Data,
+		output.WithCompact(middleWare.GetCompactFields(cmd.Context())))
 	return nil
 }

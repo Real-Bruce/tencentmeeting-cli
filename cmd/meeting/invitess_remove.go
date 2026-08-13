@@ -1,14 +1,11 @@
 package meeting
 
 import (
-	"net/http"
 	"tmeet/internal"
 	"tmeet/internal/cmdutil"
 	middleWare "tmeet/internal/cmdutil/middleware"
-	"tmeet/internal/core/thttp"
-	"tmeet/internal/exception"
+	meeting "tmeet/internal/meeting"
 	"tmeet/internal/output"
-	restProxy "tmeet/internal/proxy/rest-proxy"
 
 	"github.com/spf13/cobra"
 )
@@ -47,34 +44,13 @@ func newInviteesRemoveCmd(tmeet *internal.Tmeet) *cobra.Command {
 
 // Run executes the invite remove command.
 func (o *InviteesRemoveOptions) Run(cmd *cobra.Command, args []string) error {
-	if len(o.Invitees) == 0 {
-		return exception.InvalidArgsError.With("--invitees is required")
-	}
-
-	inviteesList, err := cmdutil.PackageApiInviteesUsers("--invitees", o.Invitees)
+	r, err := meeting.InviteesRemove(cmd.Context(), o.tmeet, meeting.InviteesRemoveParams{
+		MeetingID: o.MeetingID,
+		Invitees:  o.Invitees,
+	})
 	if err != nil {
 		return err
 	}
-
-	params := map[string]interface{}{
-		"operator_id":      o.tmeet.UserConfig.OpenId,
-		"operator_id_type": 2, // OpenId
-		"instanceid":       1, // PC, fixed value
-		"delete_invitees":  inviteesList,
-	}
-
-	req := &thttp.Request{
-		ApiURI: "/v1/meetings/{meeting_id}/modify-invitees",
-		Body:   params,
-		PathParams: thttp.PathParams{
-			"meeting_id": o.MeetingID,
-		},
-	}
-	rsp, err := restProxy.RequestProxy(cmd.Context(), http.MethodPut, o.tmeet, req)
-	if err != nil {
-		return err
-	}
-
-	output.FormatPrint(cmd, rsp.TraceId, rsp.Message, rsp.Data)
+	output.FormatPrint(cmd, r.TraceId, r.Message, r.Data)
 	return nil
 }

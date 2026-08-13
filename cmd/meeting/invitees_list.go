@@ -1,14 +1,11 @@
 package meeting
 
 import (
-	"net/http"
-	"strconv"
 	"tmeet/internal"
 	"tmeet/internal/cmdutil"
 	middleWare "tmeet/internal/cmdutil/middleware"
-	"tmeet/internal/core/thttp"
+	meeting "tmeet/internal/meeting"
 	"tmeet/internal/output"
-	restProxy "tmeet/internal/proxy/rest-proxy"
 
 	"github.com/spf13/cobra"
 )
@@ -51,37 +48,16 @@ func newInviteesCmd(tmeet *internal.Tmeet) *cobra.Command {
 }
 
 func (o *InviteesOptions) Run(cmd *cobra.Command, args []string) error {
-	queryParams := thttp.QueryParams{}
-	queryParams.Set("userid", o.tmeet.UserConfig.OpenId)
-	queryParams.Set("instanceid", "1") // PC, fixed value
-
-	// pagination compatibility
-	pageValue, pageType := cmdutil.ChoosePosOrToken(o.Pos, o.PageToken)
-	queryParams.Set("page_type", strconv.Itoa(pageType))
-	if pageType == cmdutil.PageTypeOld {
-		queryParams.Set("pos", pageValue)
-	} else {
-		queryParams.Set("page_token", pageValue)
-		pageSize, err := cmdutil.ClampingPageSize(cmd, o.PageSize, cmdutil.PageSizeMaxMeetings)
-		if err != nil {
-			return err
-		}
-		queryParams.Set("page_size", strconv.Itoa(pageSize))
-	}
-
-	req := &thttp.Request{
-		ApiURI:      "/v1/meetings/{meeting_id}/invitees",
-		QueryParams: queryParams,
-		PathParams: thttp.PathParams{
-			"meeting_id": o.MeetingID,
-		},
-	}
-	rsp, err := restProxy.RequestProxy(cmd.Context(), http.MethodGet, o.tmeet, req)
+	r, err := meeting.InviteesList(cmd.Context(), o.tmeet, meeting.InviteesListParams{
+		MeetingID: o.MeetingID,
+		Pos:       o.Pos,
+		PageToken: o.PageToken,
+		PageSize:  o.PageSize,
+	})
 	if err != nil {
 		return err
 	}
-
-	output.FormatPrint(cmd, rsp.TraceId, rsp.Message, rsp.Data,
+	output.FormatPrint(cmd, r.TraceId, r.Message, r.Data,
 		output.WithCompact(middleWare.GetCompactFields(cmd.Context())))
 	return nil
 }

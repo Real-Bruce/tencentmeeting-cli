@@ -1,13 +1,11 @@
 package meeting
 
 import (
-	"net/http"
 	"tmeet/internal"
 	"tmeet/internal/cmdutil"
 	middleWare "tmeet/internal/cmdutil/middleware"
-	"tmeet/internal/core/thttp"
+	meeting "tmeet/internal/meeting"
 	"tmeet/internal/output"
-	restProxy "tmeet/internal/proxy/rest-proxy"
 
 	"github.com/spf13/cobra"
 )
@@ -45,30 +43,13 @@ func newInviteesReplaceCmd(tmeet *internal.Tmeet) *cobra.Command {
 
 // Run executes the invite replace command.
 func (o *InviteesReplaceOptions) Run(cmd *cobra.Command, args []string) error {
-	inviteesList, err := cmdutil.PackageApiInviteesUsers("--invitees", o.Invitees)
+	r, err := meeting.InviteesReplace(cmd.Context(), o.tmeet, meeting.InviteesReplaceParams{
+		MeetingID: o.MeetingID,
+		Invitees:  o.Invitees,
+	})
 	if err != nil {
 		return err
 	}
-
-	params := map[string]interface{}{
-		"meeting_id": o.MeetingID,
-		"userid":     o.tmeet.UserConfig.OpenId,
-		"instanceid": 1, // PC, fixed value
-		"invitees":   inviteesList,
-	}
-
-	req := &thttp.Request{
-		ApiURI: "/v1/meetings/{meeting_id}/invitees",
-		Body:   params,
-		PathParams: thttp.PathParams{
-			"meeting_id": o.MeetingID,
-		},
-	}
-	rsp, err := restProxy.RequestProxy(cmd.Context(), http.MethodPut, o.tmeet, req)
-	if err != nil {
-		return err
-	}
-
-	output.FormatPrint(cmd, rsp.TraceId, rsp.Message, rsp.Data)
+	output.FormatPrint(cmd, r.TraceId, r.Message, r.Data)
 	return nil
 }
