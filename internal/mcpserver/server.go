@@ -34,6 +34,7 @@ func NewServer(tmeet *internal.Tmeet, version string) *Server {
 
 // registerTools 注册所有域的 MCP tool。新增域时在此追加调用。
 func (s *Server) registerTools() {
+	s.registerAuthTools()
 	s.registerMeetingTools()
 }
 

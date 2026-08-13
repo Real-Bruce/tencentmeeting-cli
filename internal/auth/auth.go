@@ -68,6 +68,15 @@ func (w *TmeetAuth) PollingOauth2Result(ctx context.Context, authCode string) (*
 	}
 }
 
+// PollOauth2Once 做单次轮询（非阻塞），供 MCP auth_login_poll tool 使用。
+// 返回值语义：
+//   - 用户尚未扫码授权：返回 AuthTokenData{OpenID:""} + nil，调用方应提示重试
+//   - 授权成功：返回完整 AuthTokenData（OpenID 非空）+ nil
+//   - 错误：返回 nil + error
+func (w *TmeetAuth) PollOauth2Once(ctx context.Context, authCode string) (*AuthTokenData, error) {
+	return w.getAuthToken(ctx, authCode)
+}
+
 // RefreshToken refreshes the token.
 func (w *TmeetAuth) RefreshToken(ctx context.Context) error {
 	now := time.Now().Unix()
