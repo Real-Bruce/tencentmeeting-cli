@@ -100,7 +100,7 @@ tmeet auth logout
 ```json
 {
   "mcpServers": {
-    "tmeet": {
+    "hdtmeet-mcp": {
       "command": "tmeet",
       "args": ["mcp"]
     }

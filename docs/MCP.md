@@ -1,18 +1,15 @@
-# tmeet MCP Server
+# hdtmeet-mcp
 
 将腾讯会议的全部能力以 [MCP（Model Context Protocol）](https://modelcontextprotocol.io/) tool 形式暴露给 AI Agent。
 
-支持三种传输模式：**stdio**（本地同机）、**streamable-http**（远程部署，推荐）、**sse**（旧版兼容）。
+统一采用 **streamable-http** 传输模式，本地测试与远程部署同一套命令，差异仅在 `--addr` 绑定地址。
 
 ---
 
 ## 目录
 
 - [快速开始](#快速开始)
-- [传输模式](#传输模式)
-  - [stdio（本地）](#stdio本地)
-  - [streamable-http（远程部署）](#streamable-http远程部署)
-  - [sse（旧版兼容）](#sse旧版兼容)
+- [启动参数](#启动参数)
 - [Linux 服务器部署](#linux-服务器部署)
 - [AI 客户端接入](#ai-客户端接入)
 - [鉴权](#鉴权)
@@ -26,7 +23,7 @@
 
 ## 快速开始
 
-### 前提：完成 OAuth 登录
+### 1. 完成 OAuth 登录
 
 MCP server 启动时读取本地已保存的 OAuth 凭证，**必须先在终端完成一次登录**：
 
@@ -36,72 +33,31 @@ tmeet auth login
 
 浏览器扫码授权后凭证加密保存到本地，后续 MCP server 直接复用，无需重复登录。
 
-### 启动 MCP server
+### 2. 启动 MCP server
 
 ```bash
-# 本地 stdio 模式（Cursor / Claude Desktop 同机调用）
-tmeet mcp
+# 本地测试
+tmeet mcp --transport streamable-http --addr 127.0.0.1:8080
 
-# 远程 HTTP 模式（Linux 服务器部署）
-tmeet mcp --transport streamable-http --addr 0.0.0.0:8080
+# 远程部署（生产环境务必加 --api-key）
+tmeet mcp --transport streamable-http --addr 0.0.0.0:8080 --api-key your-secret-key
 ```
+
+客户端连接地址：`http://<server-ip>:8080/mcp`
+
+> 首次 `initialize` 请求会收到 `Mcp-Session-Id` 响应头，后续请求需在请求头中携带该 ID。
 
 ---
 
-## 传输模式
+## 启动参数
 
-### stdio（本地）
-
-MCP client（Cursor / Claude Desktop / Cline 等）在本地 spawn `tmeet mcp` 进程，通过 stdin/stdout 通信。
-
-**适用场景**：AI 应用与 tmeet 运行在同一台机器。
-
-**启动方式**：不需要手动启动，AI 客户端配置后会自动 spawn 进程。
-
-**客户端配置示例**：
-
-```json
-{
-  "mcpServers": {
-    "tmeet": {
-      "command": "tmeet",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-### streamable-http（远程部署）
-
-MCP 2025-03-26 规范的 Streamable HTTP 传输。tmeet 作为长驻 HTTP 服务运行，AI 客户端通过 HTTP URL 远程接入。
-
-**适用场景**：tmeet 部署在 Linux 服务器上，多个 AI 应用远程接入。**生产环境推荐**。
-
-**启动方式**：
-
-```bash
-tmeet mcp --transport streamable-http --addr 0.0.0.0:8080
-```
-
-**客户端连接地址**：`http://<server-ip>:8080/mcp`
-
-**会话管理**：客户端首次 `initialize` 请求会收到 `Mcp-Session-Id` 响应头，后续请求需在请求头中携带该 ID。
-
-### sse（旧版兼容）
-
-基于 Server-Sent Events 的传输，兼容不支持 Streamable HTTP 的旧版客户端。
-
-**适用场景**：客户端不支持 Streamable HTTP 时的降级方案。
-
-**启动方式**：
-
-```bash
-tmeet mcp --transport sse --addr 0.0.0.0:8080 --base-url https://tmeet.example.com
-```
-
-**客户端连接地址**：SSE 端点 `http://<server-ip>:8080/sse`
-
-> `--base-url` 用于反向代理场景下告知客户端外部可访问的 URL。
+| 参数 | 默认 | 说明 |
+|------|------|------|
+| `--transport` | `streamable-http` | 传输模式，固定 streamable-http |
+| `--addr` | `0.0.0.0:8080` | 监听地址。本地测试用 `127.0.0.1:8080`，远程部署用 `0.0.0.0:8080` |
+| `--api-key` | — | Bearer Token 鉴权密钥。生产环境必填 |
+| `--tls-cert` / `--tls-key` | — | 直接启用 TLS（无需 Nginx） |
+| `--base-url` | — | 反向代理场景下告知客户端外部可访问的 URL |
 
 ---
 
@@ -121,7 +77,6 @@ make build VERSION=v1.0.14
 ### 2. 部署到服务器
 
 ```bash
-# 上传二进制
 scp tmeet user@your-server:/opt/tmeet/tmeet
 ssh user@your-server
 chmod +x /opt/tmeet/tmeet
@@ -134,18 +89,18 @@ chmod +x /opt/tmeet/tmeet
 /opt/tmeet/tmeet auth login
 ```
 
-> 如果服务器没有浏览器，使用 `--no-browser` 获取授权 URL，在本地浏览器打开：
+> 服务器没有浏览器时，使用 `--no-browser` 获取授权 URL，在本地浏览器打开：
 > ```bash
 > /opt/tmeet/tmeet auth login --no-browser
 > ```
 
 ### 4. 配置 systemd 守护进程
 
-创建 `/etc/systemd/system/tmeet-mcp.service`：
+创建 `/etc/systemd/system/hdtmeet-mcp.service`：
 
 ```ini
 [Unit]
-Description=tmeet MCP Server
+Description=hdtmeet-mcp
 After=network.target
 
 [Service]
@@ -165,9 +120,9 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now tmeet-mcp
-sudo systemctl status tmeet-mcp    # 查看运行状态
-sudo journalctl -u tmeet-mcp -f    # 查看实时日志
+sudo systemctl enable --now hdtmeet-mcp
+sudo systemctl status hdtmeet-mcp    # 查看运行状态
+sudo journalctl -u hdtmeet-mcp -f    # 查看实时日志
 ```
 
 ### 5. 反向代理（可选）
@@ -186,7 +141,7 @@ server {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        # SSE/streamable-http 需要长连接
+        # streamable-http 需要长连接
         proxy_http_version 1.1;
         proxy_set_header Connection "";
         proxy_buffering off;
@@ -203,25 +158,12 @@ server {
 
 ### Cursor
 
-项目级配置（项目根目录 `.cursor/mcp.json`）或全局配置（`~/.cursor/mcp.json`）：
+项目级配置（项目根目录 `.cursor/mcp.json`）或全局配置（`~/.cursor/mcp.json`），Cursor 0.42+：
 
-**stdio 模式**：
 ```json
 {
   "mcpServers": {
-    "tmeet": {
-      "command": "tmeet",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-**远程 HTTP 模式**（Cursor 0.42+）：
-```json
-{
-  "mcpServers": {
-    "tmeet": {
+    "hdtmeet-mcp": {
       "url": "http://your-server:8080/mcp",
       "headers": {
         "Authorization": "Bearer your-secret-key"
@@ -229,53 +171,6 @@ server {
     }
   }
 }
-```
-
-### Claude Desktop
-
-配置文件路径：
-
-| 系统 | 路径 |
-|------|------|
-| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
-| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
-
-**stdio 模式**：
-```json
-{
-  "mcpServers": {
-    "tmeet": {
-      "command": "/usr/local/bin/tmeet",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-> Claude Desktop 目前仅支持 stdio 模式。远程 HTTP 部署请使用 Cursor 或其他支持 HTTP 传输的客户端。
-
-### Cline（VSCode 插件）
-
-在 VSCode settings.json 中配置：
-
-```json
-{
-  "cline.mcpServers": {
-    "tmeet": {
-      "command": "tmeet",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-### 通用 stdio 接入
-
-任何支持 MCP stdio 协议的客户端，配置 `command` + `args` 即可：
-
-```
-command: tmeet
-args:    mcp
 ```
 
 ### 通用 HTTP 接入
@@ -291,10 +186,9 @@ Header: Authorization: Bearer <api-key>   （如启用鉴权）
 
 ## 鉴权
 
-HTTP 模式（streamable-http / sse）支持基于 Bearer Token 的 API Key 鉴权。
+基于 Bearer Token 的 API Key 鉴权。
 
 ```bash
-# 启动时指定 api-key
 tmeet mcp --transport streamable-http --addr 0.0.0.0:8080 --api-key my-secret-key
 ```
 
@@ -306,7 +200,7 @@ tmeet mcp --transport streamable-http --addr 0.0.0.0:8080 --api-key my-secret-ke
 
 ## TLS / HTTPS
 
-HTTP 模式支持直接启用 TLS（无需 Nginx）：
+直接启用 TLS（无需 Nginx）：
 
 ```bash
 tmeet mcp --transport streamable-http \
@@ -333,7 +227,7 @@ tmeet mcp --transport streamable-http \
 | `auth_login_url` | 获取授权 URL，返回 `{authorize_url, code}`。用户在浏览器打开授权 |
 | `auth_login_poll` | 单次轮询登录结果。传入 `code`，返回 `pending`/`success`/`error` |
 
-> 远程部署场景下，可在服务器上先 `tmeet auth login` 完成登录，无需使用这两个 tool。它们主要用于 stdio 本地场景下模型引导用户登录。
+> 远程部署场景下，可在服务器上先 `tmeet auth login` 完成登录，无需使用这两个 tool。它们主要用于模型引导用户完成登录。
 
 ### meeting — 会议管理（11 个）
 
@@ -401,11 +295,11 @@ tmeet mcp --transport streamable-http \
 
 ## OAuth 登录流程
 
-### 方式一：终端预登录（推荐，适合远程部署）
+### 方式一：终端预登录（推荐）
 
 在部署 tmeet 的机器上执行一次 `tmeet auth login`，凭证加密保存。后续 MCP server 直接复用。
 
-### 方式二：双 tool 登录（适合 stdio 本地场景）
+### 方式二：双 tool 登录
 
 模型通过两个 MCP tool 引导用户完成 OAuth：
 
@@ -418,24 +312,6 @@ tmeet mcp --transport streamable-http \
 ---
 
 ## 调试
-
-### VSCode 调试
-
-在 `.vscode/launch.json` 中选择 **"MCP server (interactive stdio)"** 配置：
-
-1. F5 启动，tmeet mcp 在集成终端等待 stdin 输入
-2. 打开 `.vscode/mcp-input.txt`，全选复制
-3. 在集成终端粘贴 → 每行一条 JSON-RPC 消息逐条处理，命中断点
-4. 修改 `mcp-input.txt` 里的 `tools/call` name + arguments 可测不同 tool
-
-### 非调试快速验证
-
-```bash
-# 编译 + 管道输入文件验证
-# VSCode: Ctrl+Shift+P → Run Task → "MCP server (pipe & run)"
-# 或手动执行：
-go build -o tmeet . && cat .vscode/mcp-input.txt | ./tmeet mcp
-```
 
 ### curl 测试 HTTP 传输
 
@@ -463,11 +339,11 @@ curl -s http://localhost:8080/mcp \
 
 ## FAQ
 
-### Q: stdio 模式报 "user config is empty"
+### Q: 客户端报 "user config is empty"
 
 MCP server 未找到本地凭证。先在终端执行 `tmeet auth login` 完成 OAuth 登录，再启动 MCP server。
 
-### Q: HTTP 模式客户端报 "Invalid session ID"
+### Q: 客户端报 "Invalid session ID"
 
 Streamable HTTP 传输要求先 `initialize` 获取 `Mcp-Session-Id`，后续请求携带该 ID。检查客户端是否正确处理了 session 握手。
 

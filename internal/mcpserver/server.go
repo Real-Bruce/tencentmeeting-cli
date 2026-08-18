@@ -27,7 +27,7 @@ type Server struct {
 func NewServer(tmeet *internal.Tmeet, version string) *Server {
 	s := &Server{
 		tmeet:  tmeet,
-		mcpSrv: server.NewMCPServer("tmeet", version),
+		mcpSrv: server.NewMCPServer("hdtmeet-mcp", version),
 	}
 	s.registerTools()
 	return s
