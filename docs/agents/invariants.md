@@ -1,6 +1,6 @@
 # 关键不变量（修改前必读）
 
-> 这些是项目刻意维持的设计约束，破坏会引发连锁问题。修改 `internal/` 核心代码前请完整阅读本文件。
+> 这些是项目刻意维持的设计约束，破坏会引发连锁问题。修改 `../../internal` 核心代码前请完整阅读本文件。
 
 ## 凭证安全
 
@@ -34,7 +34,7 @@ LIFO 下 `log.Close()` 最后执行。**不能颠倒**：写已关闭的 logger 
 
 ## 分页兼容
 
-v1.0.5 起统一 `--page-token` + `--page-size`，旧参数 `--page` / `--pos` / `--size` 标记 deprecated 但仍兼容。`ChoosePageOrToken` / `ChoosePosOrToken`（`internal/cmdutil/pagination.go`）实现优先级：**有 token 用 token，否则用旧参数，都没有就 token 模式**。新增分页命令必须复用这两个函数，不能自造逻辑。
+v1.0.5 起统一 `--page-token` + `--page-size`，旧参数 `--page` / `--pos` / `--size` 标记 deprecated 但仍兼容。`ChoosePageOrToken` / `ChoosePosOrToken`（`../../internal/cmdutil/pagination.go`）实现优先级：**有 token 用 token，否则用旧参数，都没有就 token 模式**。新增分页命令必须复用这两个函数，不能自造逻辑。
 
 ## ApiCmd 路由
 

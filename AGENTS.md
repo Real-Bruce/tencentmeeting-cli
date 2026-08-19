@@ -24,25 +24,26 @@ make build VERSION=v1.0.x                 # 全平台交叉编译到 dist/（发
 make sync-version VERSION=v1.0.x          # 同步 package.json 版本号
 ```
 
-> 国内开发：`go env -w GOPROXY=https://goproxy.cn,direct`（默认 `proxy.golang.org` 不可达）。详见 [docs/debugging.md](docs/debugging.md)。
+> 国内开发：`go env -w GOPROXY=https://goproxy.cn,direct`（默认 `proxy.golang.org` 不可达）。详见 [docs/agents/debugging.md](docs/agents/debugging.md)。
 
 ## 按需查阅
 
 | 任务 | 文档 |
 |---|---|
-| 改 `internal/` 核心（架构 / 请求链路 / 文件位置） | [docs/architecture.md](docs/architecture.md) |
-| **修改安全 / token / 日志 / 分页 / 输出不变量** | [docs/invariants.md](docs/invariants.md) ← 改前必读 |
-| 新增子命令 | [docs/new-command.md](docs/new-command.md) |
-| 错误码与日志调用 | [docs/conventions.md](docs/conventions.md) |
-| 配置文件 / 环境变量 | [docs/config.md](docs/config.md) |
-| 写测试 | [docs/testing.md](docs/testing.md) |
-| 调试 / VSCode / GOPROXY | [docs/debugging.md](docs/debugging.md) |
-| 排错速查 | [docs/troubleshooting.md](docs/troubleshooting.md) |
-| 发版 | [docs/release.md](docs/release.md) |
+| 改 `internal/` 核心（架构 / 请求链路 / 文件位置） | [docs/agents/architecture.md](docs/agents/architecture.md) |
+| **修改安全 / token / 日志 / 分页 / 输出不变量** | [docs/agents/invariants.md](docs/agents/invariants.md) ← 改前必读 |
+| 新增子命令 | [docs/agents/new-command.md](docs/agents/new-command.md) |
+| 错误码与日志调用 | [docs/agents/conventions.md](docs/agents/conventions.md) |
+| 配置文件 / 环境变量 | [docs/agents/config.md](docs/agents/config.md) |
+| 写测试 | [docs/agents/testing.md](docs/agents/testing.md) |
+| 调试 / VSCode / GOPROXY | [docs/agents/debugging.md](docs/agents/debugging.md) |
+| 排错速查 | [docs/agents/troubleshooting.md](docs/agents/troubleshooting.md) |
+| 发版 | [docs/agents/release.md](docs/agents/release.md) |
 
 ## 全局约束
 
 - `internal/` 禁止被外部 import。
-- 修改 `internal/` 核心前必读 [docs/invariants.md](docs/invariants.md)（破坏不变量会引发连锁问题）。
+- 修改 `internal/` 核心前必读 [docs/agents/invariants.md](docs/agents/invariants.md)（破坏不变量会引发连锁问题）。
 - 注释使用中文，遵循 Go doc 规范。
+- 每次修改代码后必须提交 git。
 - 提交流程、分支策略、敏感信息处理见 [CONTRIBUTING.md](CONTRIBUTING.md)。

@@ -1,6 +1,6 @@
 # 架构总览
 
-> 入口：[AGENTS.md](../AGENTS.md) | 修改核心前先读 [invariants.md](invariants.md)
+> 入口：[AGENTS.md](../../AGENTS.md) | 修改核心前先读 [invariants.md](invariants.md)
 
 ## 目录结构
 
@@ -81,21 +81,21 @@ main.go                        入口，仅调用 cmd.Execute()
 |---|---|
 | 全局 flag（`--format`/`--compact`/`-V`） | `cmd/root.go:90-96` |
 | 子命令注册 | `cmd/<domain>/base.go` |
-| 后端域名 | `internal/core/endpoints.go` |
-| OAuth 流程 | `internal/auth/auth.go` + `auth_code.go` + `auth_token.go` |
+| 后端域名 | `../../internal/core/endpoints.go` |
+| OAuth 流程 | `../../internal/auth/auth.go` + `auth_code.go` + `auth_token.go` |
 | token 刷新逻辑 | `internal/auth/auth.go:72` `RefreshToken` |
-| 凭证加解密 | `internal/core/keychain/`（平台分支：`keychain_darwin.go` / `keychain_windows.go` / `keychain_other.go`） |
-| HTTP 客户端 | `internal/core/thttp/client.go` + `request.go` + `response.go` |
-| 统一请求代理 | `internal/proxy/rest-proxy/proxy.go`（REST）/ `cgi-proxy/proxy.go`（CGI） |
-| 错误码定义 | `internal/exception/errors.go` + `client_code.go` + `server_code.go` |
-| 分页 | `internal/cmdutil/pagination.go` |
-| ApiCmd 路由 | `internal/cmdutil/api_cmd_resolver.go` + `api_schema.go` |
-| 中间件 | `internal/cmdutil/middleware/middle_ware.go` + `compact.go` + `api_cmd.go` |
-| 输出格式化 | `internal/output/print.go` + `options.go` |
-| 字段转换（时间戳→日期，状态码→中文） | `internal/utils/converter.go` + `enumerate/` |
-| 日志系统 | `internal/log/logging.go` + `trace_id.go` |
-| panic 兜底 | `internal/crash/recover.go` + `reporter.go` |
-| 跨进程锁 | `internal/core/filelock/` |
-| API schema 缓存 | `internal/cmdutil/api_schema_cache.go` + `internal/core/filecache/` |
-| npm 入口 wrapper | `scripts/tmeet.js`（按平台选 `dist/` 下二进制） |
-| 交叉编译 | `Makefile`（5 个 GOOS/GOARCH 目标） |
+| 凭证加解密 | `../../internal/core/keychain`（平台分支：`keychain_darwin.go` / `keychain_windows.go` / `keychain_other.go`） |
+| HTTP 客户端 | `../../internal/core/thttp/client.go` + `request.go` + `response.go` |
+| 统一请求代理 | `../../internal/proxy/rest-proxy/proxy.go`（REST）/ `cgi-proxy/proxy.go`（CGI） |
+| 错误码定义 | `../../internal/exception/errors.go` + `client_code.go` + `server_code.go` |
+| 分页 | `../../internal/cmdutil/pagination.go` |
+| ApiCmd 路由 | `../../internal/cmdutil/api_cmd_resolver.go` + `api_schema.go` |
+| 中间件 | `../../internal/cmdutil/middleware/middle_ware.go` + `compact.go` + `api_cmd.go` |
+| 输出格式化 | `../../internal/output/print.go` + `options.go` |
+| 字段转换（时间戳→日期，状态码→中文） | `../../internal/utils/converter.go` + `enumerate/` |
+| 日志系统 | `../../internal/log/logging.go` + `trace_id.go` |
+| panic 兜底 | `../../internal/crash/recover.go` + `reporter.go` |
+| 跨进程锁 | `../../internal/core/filelock` |
+| API schema 缓存 | `../../internal/cmdutil/api_schema_cache.go` + `../../internal/core/filecache` |
+| npm 入口 wrapper | `../../scripts/tmeet.js`（按平台选 `dist/` 下二进制） |
+| 交叉编译 | `../../Makefile`（5 个 GOOS/GOARCH 目标） |

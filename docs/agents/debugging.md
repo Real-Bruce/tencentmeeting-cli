@@ -12,7 +12,7 @@ go env -w GOPROXY=https://goproxy.cn,direct
 
 ## VSCode 调试
 
-`.vscode/launch.json` 已配置 6 个调试入口（`auth login` / `auth status` / `meeting list` / `record list` / `-V` / **custom args**）。日常调试用最后一个，直接改 `args` 数组 → 保存 → F5。
+`../../.vscode/launch.json` 已配置 6 个调试入口（`auth login` / `auth status` / `meeting list` / `record list` / `-V` / **custom args**）。日常调试用最后一个，直接改 `args` 数组 → 保存 → F5。
 
 > **CLI 调试模型提示**：CLI 工具每次 F5 = 一个进程 = 一条预写死在 `args` 里的命令。**没有"交互式终端输命令命中断点"的体验**。换命令就改 `args` 再 F5。
 

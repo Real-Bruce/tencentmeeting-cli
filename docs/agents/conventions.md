@@ -2,7 +2,7 @@
 
 ## 错误码
 
-错误集中在 `internal/exception/`：
+错误集中在 `../../internal/exception`：
 
 - `errors.go` — `TmeetError{Code, Message}`，`With(format, args...)` 返回新错误（不可变，原错误保留）
 - `client_code.go` — 客户端错误码 2xxx/3xxx + 9000（panic）
