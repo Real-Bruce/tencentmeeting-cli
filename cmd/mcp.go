@@ -45,12 +45,12 @@ TRANSPORT MODES:
 
   streamable-http — remote server deployment (recommended for production):
     Run on a Linux server, AI clients connect via HTTP URL.
-      tmeet mcp --transport streamable-http --addr 0.0.0.0:8080
-    Client connects to: http://<server>:8080/mcp
+      tmeet mcp --transport streamable-http --addr 0.0.0.0:8347
+    Client connects to: http://<server>:8347/mcp
 
   sse — legacy SSE transport (compatibility):
-      tmeet mcp --transport sse --addr 0.0.0.0:8080
-    Client connects to SSE endpoint: http://<server>:8080/sse
+      tmeet mcp --transport sse --addr 0.0.0.0:8347
+    Client connects to SSE endpoint: http://<server>:8347/sse
 
 AUTH (for HTTP modes):
   --api-key <key>   Requires clients to send "Authorization: Bearer <key>" header.
@@ -103,7 +103,7 @@ PREREQUISITE:
 	cmdutil.InjectSkipPreCheckAnnotation(cmd)
 
 	cmd.Flags().StringVar(&transport, "transport", "stdio", "transport: stdio | streamable-http | sse")
-	cmd.Flags().StringVar(&addr, "addr", ":8080", "HTTP listen address (for streamable-http/sse)")
+	cmd.Flags().StringVar(&addr, "addr", ":8347", "HTTP listen address (for streamable-http/sse)")
 	cmd.Flags().StringVar(&endpoint, "endpoint", "/mcp", "endpoint path (for streamable-http)")
 	cmd.Flags().StringVar(&baseURL, "base-url", "", "external base URL (for sse, e.g. https://tmeet.example.com)")
 	cmd.Flags().StringVar(&apiKey, "api-key", "", "bearer token for auth (HTTP modes); empty = no auth")

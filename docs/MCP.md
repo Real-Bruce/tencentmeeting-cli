@@ -37,13 +37,13 @@ tmeet auth login
 
 ```bash
 # 本地测试
-tmeet mcp --transport streamable-http --addr 127.0.0.1:8080
+tmeet mcp --transport streamable-http --addr 127.0.0.1:8347
 
 # 远程部署（生产环境务必加 --api-key）
-tmeet mcp --transport streamable-http --addr 0.0.0.0:8080 --api-key your-secret-key
+tmeet mcp --transport streamable-http --addr 0.0.0.0:8347 --api-key your-secret-key
 ```
 
-客户端连接地址：`http://<server-ip>:8080/mcp`
+客户端连接地址：`http://<server-ip>:8347/mcp`
 
 > 首次 `initialize` 请求会收到 `Mcp-Session-Id` 响应头，后续请求需在请求头中携带该 ID。
 
@@ -54,7 +54,7 @@ tmeet mcp --transport streamable-http --addr 0.0.0.0:8080 --api-key your-secret-
 | 参数 | 默认 | 说明 |
 |------|------|------|
 | `--transport` | `streamable-http` | 传输模式，固定 streamable-http |
-| `--addr` | `0.0.0.0:8080` | 监听地址。本地测试用 `127.0.0.1:8080`，远程部署用 `0.0.0.0:8080` |
+| `--addr` | `0.0.0.0:8347` | 监听地址。本地测试用 `127.0.0.1:8347`，远程部署用 `0.0.0.0:8347` |
 | `--api-key` | — | Bearer Token 鉴权密钥。生产环境必填 |
 | `--tls-cert` / `--tls-key` | — | 直接启用 TLS（无需 Nginx） |
 | `--base-url` | — | 反向代理场景下告知客户端外部可访问的 URL |
@@ -107,7 +107,7 @@ After=network.target
 Type=simple
 ExecStart=/opt/tmeet/tmeet mcp \
   --transport streamable-http \
-  --addr 0.0.0.0:8080 \
+  --addr 0.0.0.0:8347 \
   --api-key your-secret-key
 WorkingDirectory=/opt/tmeet
 Environment=TMEET_CLI_CONFIG_DIR=/opt/tmeet/.tmeet
@@ -138,7 +138,7 @@ server {
     ssl_certificate_key /etc/ssl/tmeet.key;
 
     location /mcp {
-        proxy_pass http://127.0.0.1:8080;
+        proxy_pass http://127.0.0.1:8347;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         # streamable-http 需要长连接
@@ -164,7 +164,7 @@ server {
 {
   "mcpServers": {
     "hdtmeet-mcp": {
-      "url": "http://your-server:8080/mcp",
+      "url": "http://your-server:8347/mcp",
       "headers": {
         "Authorization": "Bearer your-secret-key"
       }
@@ -178,7 +178,7 @@ server {
 任何支持 MCP Streamable HTTP 传输的客户端，配置 URL：
 
 ```
-URL:    http://<server-ip>:8080/mcp
+URL:    http://<server-ip>:8347/mcp
 Header: Authorization: Bearer <api-key>   （如启用鉴权）
 ```
 
@@ -189,7 +189,7 @@ Header: Authorization: Bearer <api-key>   （如启用鉴权）
 基于 Bearer Token 的 API Key 鉴权。
 
 ```bash
-tmeet mcp --transport streamable-http --addr 0.0.0.0:8080 --api-key my-secret-key
+tmeet mcp --transport streamable-http --addr 0.0.0.0:8347 --api-key my-secret-key
 ```
 
 启用后，客户端必须在每个请求中携带 `Authorization: Bearer my-secret-key` 头，否则返回 `401 Unauthorized`。
@@ -317,19 +317,19 @@ tmeet mcp --transport streamable-http \
 
 ```bash
 # 1. initialize，获取 session-id
-curl -s -D - http://localhost:8080/mcp \
+curl -s -D - http://localhost:8347/mcp \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}}}'
 # 响应头中取 Mcp-Session-Id 的值
 
 # 2. 发送 initialized 通知
-curl -s http://localhost:8080/mcp \
+curl -s http://localhost:8347/mcp \
   -H "Content-Type: application/json" \
   -H "Mcp-Session-Id: <session-id-from-step-1>" \
   -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
 
 # 3. 调用 tool
-curl -s http://localhost:8080/mcp \
+curl -s http://localhost:8347/mcp \
   -H "Content-Type: application/json" \
   -H "Mcp-Session-Id: <session-id-from-step-1>" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"meeting_list","arguments":{}}}'

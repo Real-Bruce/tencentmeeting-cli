@@ -105,7 +105,7 @@ func (s *Server) ServeSSE(opts ServeHTTPOpts) error {
 
 // ServeHTTPOpts 是 HTTP 传输的部署选项。
 type ServeHTTPOpts struct {
-	// Addr 监听地址，如 ":8080" 或 "0.0.0.0:8080"。
+	// Addr 监听地址，如 ":8347" 或 "0.0.0.0:8347"。
 	Addr string
 	// Endpoint 端点路径（仅 StreamableHTTP），默认 "/mcp"。
 	Endpoint string
