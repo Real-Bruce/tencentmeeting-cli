@@ -11,6 +11,7 @@
 - [快速开始](#快速开始)
 - [启动参数](#启动参数)
 - [Linux 服务器部署](#linux-服务器部署)
+- [多实例部署](#多实例部署)
 - [AI 客户端接入](#ai-客户端接入)
 - [鉴权](#鉴权)
 - [TLS / HTTPS](#tls--https)
@@ -151,6 +152,147 @@ server {
 ```
 
 此时客户端连接地址为 `https://tmeet.example.com/mcp`。
+
+---
+
+## 多实例部署
+
+同一台服务器为多个用户/部门各自运行独立 MCP server：每个实例持有该用户的 OAuth 凭证，靠「端口 + 凭证目录 + 数据目录」三重隔离，共用一份二进制和一个 systemd 模板单元。
+
+### 隔离维度
+
+| 维度 | 机制 | 说明 |
+|------|------|------|
+| 端口 | `--addr` 各异 | 每实例独占端口 |
+| OAuth 凭证目录 | `TMEET_CLI_CONFIG_DIR` | 独立 `config.json` + `token.lock` + `<openid>.enc` |
+| 加密数据目录 | `TMEET_CLI_DATA_DIR` | 独立 `master.key` + `.enc` 文件 |
+| api-key | 各自随机生成 | 每实例独立 Bearer Token |
+| systemd 实例名 | `hdtmeet-mcp@<name>` | 模板单元 `%i` 取实例名 |
+
+> 所有实例共用一个 `tmeet` 系统用户和一份二进制。若需跨人强隔离（一实例沦陷不波及他人），可改为每实例一个 OS 用户并在 unit 内设 `User=%i`。
+
+### 目录结构
+
+```
+/opt/hdtmeet/tmeet              # 单一二进制，所有实例共用
+/opt/hdtmeet/<name>/            # 每实例独立（config.json + token.lock + master.key + *.enc，0700）
+/etc/hdtmeet/<name>.conf        # 每实例 env 文件（ADDR + API_KEY，0600）
+/etc/systemd/system/hdtmeet-mcp@.service   # 模板单元，%i = 实例名
+```
+
+### 1. 建服务用户 + 基础目录
+
+```bash
+sudo useradd -r -s /usr/sbin/nologin -d /opt/hdtmeet tmeet
+sudo mkdir -p /opt/hdtmeet /etc/hdtmeet
+sudo chown tmeet:tmeet /opt/hdtmeet /etc/hdtmeet
+sudo chmod 700 /etc/hdtmeet
+sudo install -m 0755 -o tmeet -g tmeet tmeet /opt/hdtmeet/tmeet   # 装二进制
+```
+
+### 2. 写 systemd 模板单元
+
+`/etc/systemd/system/hdtmeet-mcp@.service`：
+
+```ini
+[Unit]
+Description=hdtmeet-mcp (%i)
+After=network.target
+
+[Service]
+Type=simple
+User=tmeet
+Group=tmeet
+EnvironmentFile=/etc/hdtmeet/%i.conf
+ExecStart=/opt/hdtmeet/tmeet mcp --transport streamable-http --addr ${ADDR} --api-key ${API_KEY}
+WorkingDirectory=/opt/hdtmeet
+Environment=TMEET_CLI_CONFIG_DIR=/opt/hdtmeet/%i
+Environment=TMEET_CLI_DATA_DIR=/opt/hdtmeet/%i
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+> `%i` 为实例名占位符。`systemctl start hdtmeet-mcp@qtj` 时 `%i=qtj`，自动读取 `/etc/hdtmeet/qtj.conf` 并使用 `/opt/hdtmeet/qtj/` 作为凭证目录。
+
+### 3. 批量建实例目录 + env 文件
+
+以 7 个部门为例（端口 8347–8353）：
+
+```bash
+port=8347
+for u in qtj xfq qx dt gyl ls sy; do
+  sudo install -d -o tmeet -g tmeet -m 700 "/opt/hdtmeet/$u"
+  key=$(openssl rand -hex 24)
+  sudo tee "/etc/hdtmeet/$u.conf" >/dev/null <<EOF
+ADDR=0.0.0.0:$port
+API_KEY=$key
+EOF
+  sudo chown tmeet:tmeet "/etc/hdtmeet/$u.conf"
+  sudo chmod 600 "/etc/hdtmeet/$u.conf"
+  echo "$u  http://<server-ip>:$port/mcp  key=$key"
+  port=$((port+1))
+done
+```
+
+> 记下输出中的 api-key，后续分发给各客户端。
+
+### 4. 每实例 OAuth 登录
+
+每实例单独登录一次，凭证落入各自目录：
+
+```bash
+sudo -u tmeet env TMEET_CLI_CONFIG_DIR=/opt/hdtmeet/qtj \
+  TMEET_CLI_DATA_DIR=/opt/hdtmeet/qtj \
+  /opt/hdtmeet/tmeet auth login --no-browser
+```
+
+> 换实例名重复每个。`--no-browser` 输出授权 URL，发给对应用户在本地浏览器扫码。refresh_token 约 30 天到期后用同命令重登该实例。
+
+### 5. 防火墙开端口
+
+```bash
+sudo firewall-cmd --permanent --add-port=8347-8353/tcp
+sudo firewall-cmd --reload
+```
+
+### 6. 启动 + 开机自启
+
+```bash
+sudo systemctl daemon-reload
+for u in qtj xfq qx dt gyl ls sy; do
+  sudo systemctl enable --now hdtmeet-mcp@$u
+done
+```
+
+### 7. 验证与运维
+
+```bash
+sudo systemctl list-units 'hdtmeet-mcp@*'          # 一览全部实例
+sudo systemctl status hdtmeet-mcp@qtj              # 单个状态
+sudo journalctl -u hdtmeet-mcp@qtj -f              # 单个实时日志
+
+sudo systemctl restart hdtmeet-mcp@qtj             # 重启某人（凭证续期后）
+sudo systemctl restart 'hdtmeet-mcp@*'              # 全部重启
+sudo systemctl disable --now hdtmeet-mcp@qtj       # 停 + 取消自启
+sudo rm -rf /opt/hdtmeet/qtj /etc/hdtmeet/qtj.conf # 彻底清理某人
+```
+
+### 客户端分发
+
+每实例一份连接信息：
+
+- URL：`http://<server-ip>:<port>/mcp`
+- Header：`Authorization: Bearer <该实例 api-key>`
+
+### 升级二进制
+
+```bash
+sudo install -m 0755 -o tmeet -g tmeet tmeet /opt/hdtmeet/tmeet
+sudo systemctl restart 'hdtmeet-mcp@*'   # 配置与凭证不受影响
+```
 
 ---
 
@@ -353,15 +495,7 @@ OAuth refresh_token 有效期约 30 天。过期后需在服务器上重新 `tme
 
 ### Q: 多用户场景如何部署
 
-当前 MCP server 持有单用户凭证。多用户场景需为每个用户部署独立的 tmeet 实例（不同端口/不同 config-dir）：
-
-```bash
-# 用户 A
-TMEET_CLI_CONFIG_DIR=/opt/tmeet/userA tmeet mcp --addr 0.0.0.0:8081
-
-# 用户 B
-TMEET_CLI_CONFIG_DIR=/opt/tmeet/userB tmeet mcp --addr 0.0.0.0:8082
-```
+每个用户/部门需独立实例（不同端口 + 独立凭证目录 + 独立 api-key）。完整步骤见 [多实例部署](#多实例部署) 章节：使用 systemd 模板单元 `hdtmeet-mcp@<name>.service`，一份单元管理 N 个实例，靠 `TMEET_CLI_CONFIG_DIR` + `TMEET_CLI_DATA_DIR` 双 env 隔离凭证。
 
 ### Q: tool 返回的数据里时间/状态已是中文/ISO 格式
 
