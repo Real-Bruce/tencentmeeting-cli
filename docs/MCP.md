@@ -26,10 +26,10 @@
 
 ### 1. 完成 OAuth 登录
 
-MCP server 启动时读取本地已保存的 OAuth 凭证，**必须先在终端完成一次登录**：
+MCP server 启动时读取本地已保存的 OAuth 凭证，**必须先在终端完成一次登录**（`--name` 必填，用于为账号指定别名）：
 
 ```bash
-tmeet auth login
+tmeet auth login --name <别名>
 ```
 
 浏览器扫码授权后凭证加密保存到本地，后续 MCP server 直接复用，无需重复登录。
@@ -54,11 +54,12 @@ tmeet mcp --transport streamable-http --addr 0.0.0.0:8347 --api-key your-secret-
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
-| `--transport` | `streamable-http` | 传输模式，固定 streamable-http |
-| `--addr` | `0.0.0.0:8347` | 监听地址。本地测试用 `127.0.0.1:8347`，远程部署用 `0.0.0.0:8347` |
-| `--api-key` | — | Bearer Token 鉴权密钥。生产环境必填 |
-| `--tls-cert` / `--tls-key` | — | 直接启用 TLS（无需 Nginx） |
-| `--base-url` | — | 反向代理场景下告知客户端外部可访问的 URL |
+| `--transport` | `stdio` | 传输模式，支持 `stdio` / `streamable-http` / `sse`。远程部署用 `streamable-http` |
+| `--addr` | `:8347` | HTTP 监听地址（streamable-http/sse 用）。本地测试用 `127.0.0.1:8347`，远程部署用 `0.0.0.0:8347` |
+| `--endpoint` | `/mcp` | streamable-http 的端点路径 |
+| `--api-key` | — | Bearer Token 鉴权密钥。HTTP 模式下生产环境必填 |
+| `--tls-cert` / `--tls-key` | — | 直接启用 TLS（无需 Nginx），HTTP 模式可用 |
+| `--base-url` | — | 外部可访问的基础 URL，主要用于 sse / 反向代理场景 |
 
 ---
 
@@ -86,13 +87,13 @@ chmod +x /opt/tmeet/tmeet
 ### 3. 完成 OAuth 登录
 
 ```bash
-# 在服务器终端执行，浏览器扫码授权
-/opt/tmeet/tmeet auth login
+# 在服务器终端执行，浏览器扫码授权（--name 必填，为账号指定别名）
+/opt/tmeet/tmeet auth login --name <别名>
 ```
 
 > 服务器没有浏览器时，使用 `--no-browser` 获取授权 URL，在本地浏览器打开：
 > ```bash
-> /opt/tmeet/tmeet auth login --no-browser
+> /opt/tmeet/tmeet auth login --name <别名> --no-browser
 > ```
 
 ### 4. 配置 systemd 守护进程
@@ -246,10 +247,10 @@ done
 ```bash
 sudo -u tmeet env TMEET_CLI_CONFIG_DIR=/opt/hdtmeet/qtj \
   TMEET_CLI_DATA_DIR=/opt/hdtmeet/qtj \
-  /opt/hdtmeet/tmeet auth login --no-browser
+  /opt/hdtmeet/tmeet auth login --name qtj --no-browser
 ```
 
-> 换实例名重复每个。`--no-browser` 输出授权 URL，发给对应用户在本地浏览器扫码。refresh_token 约 30 天到期后用同命令重登该实例。
+> 换实例名时同步替换 `--name`（与实例名一致便于辨认），重复每个实例。`--no-browser` 输出授权 URL，发给对应用户在本地浏览器扫码。refresh_token 约 30 天到期后用同命令重登该实例。
 
 ### 5. 防火墙开端口
 
@@ -490,7 +491,7 @@ curl -s http://localhost:8347/mcp \
 
 ### Q: 客户端报 "user config is empty"
 
-MCP server 未找到本地凭证。先在终端执行 `tmeet auth login` 完成 OAuth 登录，再启动 MCP server。
+MCP server 未找到本地凭证。先在终端执行 `tmeet auth login --name <别名>` 完成 OAuth 登录，再启动 MCP server。
 
 ### Q: 客户端报 "Invalid session ID"
 
@@ -498,7 +499,7 @@ Streamable HTTP 传输要求先 `initialize` 获取 `Mcp-Session-Id`，后续请
 
 ### Q: 远程部署后凭证失效
 
-OAuth refresh_token 有效期约 30 天。过期后需在服务器上重新 `tmeet auth login`。MCP server 内部会自动刷新 access_token（提前 60 秒），无需手动干预。
+OAuth refresh_token 有效期约 30 天。过期后需在服务器上重新 `tmeet auth login --name <别名>`。MCP server 内部会自动刷新 access_token（提前 60 秒），无需手动干预。
 
 ### Q: 多用户场景如何部署
 
@@ -510,4 +511,4 @@ MCP tool 返回的数据已做字段转换（时间戳→ISO 8601 日期、状�
 
 ### Q: 如何限制 AI 只读不写
 
-MCP 协议本身不提供 tool 级权限控制。如需限制，可在 `internal/mcpserver/server.go` 的 `registerTools()` 中注释掉写操作 tool（如 `meeting_create`/`meeting_cancel`/`control_kick` 等），重新编译部署。
+MCP 协议本身不提供 tool 级权限控制。如需限制，可在 `internal/mcpserver/tools_meeting.go`、`tools_control_tshoot.go` 等 `tools_*.go` 文件中注释掉对应写 tool 的 `mcpSrv.AddTool(...)` 块（如 `meeting_create`/`meeting_cancel`/`control_kick` 等），重新编译部署。

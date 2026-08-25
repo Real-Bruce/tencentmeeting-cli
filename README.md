@@ -54,14 +54,14 @@ npx skills add TencentCloud/tencentmeeting-cli -y -g
 ### 1. 登录授权
 
 ```bash
-tmeet auth login
+tmeet auth login --name token-qtj
 ```
 
-执行后会自动尝试打开系统默认浏览器跳转到授权 URL；若无默认浏览器，则输出授权 URL，手动在浏览器中打开完成扫码授权。CLI 自动轮询结果（超时 5 分钟），凭证加密保存到本地。
+`--name` 为**必填**，用于为账号指定别名。执行后会自动尝试打开系统默认浏览器跳转到授权 URL；若无默认浏览器，则输出授权 URL，手动在浏览器中打开完成扫码授权。CLI 自动轮询结果（超时 5 分钟），凭证加密保存到本地。
 
-> 如需禁用自动打开浏览器，可使用 `--no-browser` 参数：`tmeet auth login --no-browser`
+> 如需禁用自动打开浏览器，可使用 `--no-browser` 参数：`tmeet auth login --name token-qtj --no-browser`
 
-需要同时登录多个账号时，用 `--name`（**必填**）为每个账号指定别名（详见[多账号管理](#多账号管理)）：
+登录多个账号时，用不同的 `--name` 别名区分（`--name` 始终必填，即使只登录一个账号；详见[多账号管理](#多账号管理)）：
 
 ```bash
 tmeet auth login --name token-qtj   # 登录并命名为 token-qtj
@@ -166,14 +166,14 @@ tmeet auth use token-qx
 
 ### 使用流程
 
-1. 先在终端执行 `tmeet auth login` 完成 OAuth 登录授权（MCP server 读取已有本地凭证）
-2. 启动 MCP client，即可调用全部 30 个 tool
+1. 先在终端执行 `tmeet auth login --name <别名>` 完成 OAuth 登录授权（MCP server 读取已有本地凭证）
+2. 启动 MCP client，即可调用全部 32 个 tool
 
 ### 可用 tool 列表
 
 | 域 | tool | 说明 |
 |------|------|------|
-| auth | `auth_login_url` / `auth_login_poll` | 获取授权 URL / 单次轮询登录结果（双 tool 非阻塞登录，均支持可选 `name` 参数做多账号登录） |
+| auth | `auth_login_url` / `auth_login_poll` | 获取授权 URL / 单次轮询登录结果（双 tool 非阻塞登录，均需传入必填 `name` 参数做多账号登录） |
 | auth | `auth_list` / `auth_use` | 列出全部已登录账号 / 按别名切换活跃账号 |
 | meeting | `meeting_list` / `meeting_list_ended` / `meeting_search` | 列出会议 / 已结束会议 / 搜索会议 |
 | meeting | `meeting_get` / `meeting_create` / `meeting_update` / `meeting_cancel` | 会议详情 / 创建 / 更新 / 取消 |
@@ -1393,7 +1393,7 @@ tmeet tshoot feedback \
 ## 安全与风险提示（使用前必读）
 
 ---
-**腾讯会议 CLI 工具接入 OpenClaw 等AI Agent 并获得您的授权后，AI 将会获得你在腾讯会议的数据访问权限（包括但不限于您的详细用户信息、管理和查询会议、录制和纪要等文件查询导出），并以您的用户身份在授权范围内执行操作。尽管工具有安全防护，AI仍可能因模型幻觉、提示词注入、投毒攻击、执行偏差不可控等原因，导致数据泄露、越权操作等执行非预期操作的高风险后果，请您谨慎操作和使用，并遵循你所在企业的数据安全等内部管理要求，避免造成数据丢失、泄露等损失。若怀疑泄露或需停用，请立即执行登出命令 `tmeet auth logout`。**
+**腾讯会议 CLI 工具接入 OpenClaw 等AI Agent 并获得您的授权后，AI 将会获得你在腾讯会议的数据访问权限（包括但不限于您的详细用户信息、管理和查询会议、录制和纪要等文件查询导出），并以您的用户身份在授权范围内执行操作。尽管工具有安全防护，AI仍可能因模型幻觉、提示词注入、投毒攻击、执行偏差不可控等原因，导致数据泄露、越权操作等执行非预期操作的高风险后果，请您谨慎操作和使用，并遵循你所在企业的数据安全等内部管理要求，避免造成数据丢失、泄露等损失。若怀疑泄露或需停用，请立即执行登出命令 `tmeet auth logout --name <别名>`。**
 
 **请您充分理解并接受上述风险后再使用本工具，安装使用CLI后即视为您自愿承担相关责任。**
 

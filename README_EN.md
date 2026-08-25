@@ -54,14 +54,14 @@ npx skills add TencentCloud/tencentmeeting-cli -y -g
 ### 1. Login & Authorization
 
 ```bash
-tmeet auth login
+tmeet auth login --name token-qtj
 ```
 
-This automatically attempts to open the system default browser to the authorization URL. If no default browser is available, it prints the URL for you to open manually. The CLI polls for the result automatically (5-minute timeout) and saves the credentials encrypted locally.
+`--name` is **required** and labels the account. This automatically attempts to open the system default browser to the authorization URL. If no default browser is available, it prints the URL for you to open manually. The CLI polls for the result automatically (5-minute timeout) and saves the credentials encrypted locally.
 
-> To disable auto-opening the browser, use the `--no-browser` flag: `tmeet auth login --no-browser`
+> To disable auto-opening the browser, use the `--no-browser` flag: `tmeet auth login --name token-qtj --no-browser`
 
-To log in to multiple accounts, give each a `--name` alias (**required**) (see [Multi-Account Management](#multi-account-management)):
+To log in to multiple accounts, give each a distinct `--name` alias (`--name` is always required, even for a single account; see [Multi-Account Management](#multi-account-management)):
 
 ```bash
 tmeet auth login --name token-qtj   # log in and name it token-qtj
@@ -142,6 +142,51 @@ Each account's credentials are encrypted and stored independently under a folder
 ### Automatic migration of legacy accounts
 
 When upgrading from a single-account release, the first startup automatically migrates legacy-layout credentials into the new per-OpenId isolated layout and registers them in the account registry — no re-login required. Migration is idempotent, never deletes legacy data, and never blocks startup. See [Configuration](#configuration).
+
+---
+
+## As an MCP Server
+
+`tmeet` can run as an **MCP (Model Context Protocol) server**, exposing all of its capabilities as tools to AI Agents (Cursor, Claude Desktop, etc.).
+
+### Configuration
+
+Add the following to your MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "hdtmeet-mcp": {
+      "command": "tmeet",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### Usage
+
+1. First run `tmeet auth login --name <alias>` in a terminal to complete OAuth authorization (the MCP server reuses the existing local credentials)
+2. Start the MCP client, then you can invoke all 32 tools
+
+### Available Tools
+
+| Domain | Tool | Description |
+|--------|------|-------------|
+| auth | `auth_login_url` / `auth_login_poll` | Get the authorization URL / poll once for the login result (two-tool non-blocking login; both require the mandatory `name` parameter for multi-account login) |
+| auth | `auth_list` / `auth_use` | List all logged-in accounts / switch the active account by alias |
+| meeting | `meeting_list` / `meeting_list_ended` / `meeting_search` | List meetings / ended meetings / search meetings |
+| meeting | `meeting_get` / `meeting_create` / `meeting_update` / `meeting_cancel` | Meeting details / create / update / cancel |
+| meeting | `meeting_invitees_list` / `_add` / `_remove` / `_replace` | Invitee management |
+| record | `record_list` / `record_search` / `record_address` | Recording list / search / download URL |
+| record | `record_smart_minutes` / `record_transcript_get` / `_paragraphs` / `_search` | Smart minutes / transcripts |
+| record | `record_permission_apply_prepare` / `_commit` | Recording permission application (two-step flow) |
+| report | `report_participants` / `report_waiting_room_log` | Participants / waiting room |
+| contact | `contact_search` / `lookup_by_email` / `lookup_by_phone` | Contacts search (only as a prerequisite for meeting invitations) |
+| control | `control_call` / `control_kick` | In-meeting control: call / kick |
+| tshoot | `tshoot_feedback` | Report tool issues to the platform |
+
+> **Note**: All tool responses have been field-converted (timestamps → ISO dates, status codes → Chinese), consistent with CLI output.
 
 ---
 
@@ -1348,7 +1393,7 @@ tmeet tshoot feedback \
 ## Security & Risk Notice (Please Read Before Use)
 
 ---
-**After the Tencent Meeting CLI tool is connected to AI Agents such as OpenClaw and granted your authorization, the AI will gain access to your Tencent Meeting data (including but not limited to your detailed user information, meeting management and queries, recordings, smart minutes, and other file exports), and will perform operations on your behalf within the authorized scope. Although the tool has security protections in place, the AI may still cause data leakage, unauthorized operations, or other unintended consequences due to model hallucinations, prompt injection, poisoning attacks, uncontrollable execution deviations, and other risks. Please use this tool with caution and comply with your organization's internal data security policies to avoid data loss or leakage. If you suspect a breach or need to disable access, immediately run `tmeet auth logout`.**
+**After the Tencent Meeting CLI tool is connected to AI Agents such as OpenClaw and granted your authorization, the AI will gain access to your Tencent Meeting data (including but not limited to your detailed user information, meeting management and queries, recordings, smart minutes, and other file exports), and will perform operations on your behalf within the authorized scope. Although the tool has security protections in place, the AI may still cause data leakage, unauthorized operations, or other unintended consequences due to model hallucinations, prompt injection, poisoning attacks, uncontrollable execution deviations, and other risks. Please use this tool with caution and comply with your organization's internal data security policies to avoid data loss or leakage. If you suspect a breach or need to disable access, immediately run `tmeet auth logout --name <name>`.**
 
 **By installing and using this CLI, you acknowledge that you have fully understood and accepted the above risks and voluntarily assume the associated responsibilities.**
 
