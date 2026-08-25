@@ -55,6 +55,10 @@ var (
 	UserIdentityExpiredError = NewTmeetError(ClientCodeUserIdentityExpired, "user identity expired, please use 'tmeet auth login'")
 	// LogoutFailedError indicates logout failure.
 	LogoutFailedError = NewTmeetError(ClientCodeLogoutFailed, "logout failed, please retry later")
+	// AccountNotFoundError indicates the named account was not found in the local registry.
+	AccountNotFoundError = NewTmeetError(ClientCodeAccountNotFound, "account not found, please use 'tmeet auth list' to check registered accounts")
+	// AccountNameConflictError indicates the account alias is already used by a different account.
+	AccountNameConflictError = NewTmeetError(ClientCodeAccountNameConflict, "account name already exists for a different account, please choose another name")
 
 	// NetworkError indicates a network error.
 	NetworkError = NewTmeetError(ClientCodeNetwork, "network error, please retry later")

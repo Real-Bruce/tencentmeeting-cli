@@ -22,7 +22,8 @@ import (
 // LoginOptions holds the login options.
 type LoginOptions struct {
 	tmeet     *internal.Tmeet
-	NoBrowser bool // login without browser, true to disable auto-open browser
+	Name      string // account alias, e.g. token-qtj; empty defaults to the server-returned OpenId
+	NoBrowser bool   // login without browser, true to disable auto-open browser
 }
 
 // newLoginCmd is the login command.
@@ -31,7 +32,7 @@ func newLoginCmd(tmeet *internal.Tmeet) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "login to tmeet",
-		Long:  "Login to tmeet by setting up configuration and credentials",
+		Long:  "Login to tmeet by setting up configuration and credentials. Use --name to label the account (e.g. token-qtj) when logging in multiple accounts; the alias defaults to the server-returned OpenId when omitted.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			lockPath := config.GetTokenLockPath()
 			return filelock.WithLock(lockPath, func() error {
@@ -41,19 +42,26 @@ func newLoginCmd(tmeet *internal.Tmeet) *cobra.Command {
 	}
 	cmdutil.InjectSkipPreCheckAnnotation(cmd)
 
+	cmd.Flags().StringVar(&opts.Name, "name", "", "account alias for multi-account login (e.g. token-qtj); defaults to OpenId when empty")
 	cmd.Flags().BoolVar(&opts.NoBrowser, "no-browser", false, "disable auto-opening the browser, only print the authorization URL")
 
 	return cmd
 }
 
 func (o *LoginOptions) Run(cmd *cobra.Command, args []string) error {
-	// Lock contention above; re-read the file config here.
-	config.ResetCache()
-	userConfig, _ := config.GetUserConfig()
-	if userConfig != nil &&
-		userConfig.RefreshTokenExpires > time.Now().Unix() {
-		// Already logged in && refreshToken not expired, return directly.
-		return exception.UserHasBeenInitializedError
+	// Multi-account login: only block when a named account is already authenticated.
+	// Without --name we cannot know which account is about to log in, so allow proceeding
+	// (this lets users add accounts with a bare `tmeet auth login`).
+	if o.Name != "" {
+		config.ResetCache()
+		if acct, _ := config.GetAccountConfig(o.Name); acct != nil &&
+			acct.RefreshTokenExpires > time.Now().Unix() {
+			return exception.UserHasBeenInitializedError.
+				With("account %q is already logged in, use 'tmeet auth use %s' to switch to it", o.Name, o.Name)
+		}
+	} else {
+		// Re-read the active account so the in-memory cache reflects on-disk state.
+		config.ResetCache()
 	}
 	// Get authorization URL.
 	tmeetAuth := auth.NewTmeetAuth(o.tmeet)
@@ -82,7 +90,8 @@ func (o *LoginOptions) Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	userConfig = &config.UserConfig{
+	userConfig := &config.UserConfig{
+		Name:         o.Name,
 		SdkId:        authTokenData.SdkId,
 		OpenId:       authTokenData.OpenID,
 		AccessToken:  authTokenData.AccessToken,
@@ -114,6 +123,11 @@ func (o *LoginOptions) Run(cmd *cobra.Command, args []string) error {
 		log.Errorf(cmd.Context(), "save agent config failed: %v", err)
 	}
 
+	accountName := o.Name
+	if accountName == "" {
+		accountName = authTokenData.OpenID
+	}
 	output.PrintInfof(cmd, "Login successful. Start managing your meetings using tmeet.")
+	output.PrintInfof(cmd, "  Account: %s (openId: %s)", accountName, authTokenData.OpenID)
 	return nil
 }

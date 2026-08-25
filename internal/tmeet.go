@@ -34,6 +34,10 @@ func NewTmeet() (*Tmeet, error) {
 		return nil, exception.InitializeFailedError.With("initial config dir:%s failed, reason:%s", configDir, err.Error())
 	}
 
+	// Migrate any pre-multi-account storage layout into the new per-account folder layout.
+	// Idempotent; failures are logged and do not block startup.
+	config.MigrateLegacyAccounts()
+
 	// Create the REST client.
 	customClt, err := thttp.NewClient(
 		core.GetOpenEndpoint(),

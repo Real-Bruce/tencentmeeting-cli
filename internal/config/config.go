@@ -11,10 +11,11 @@ import (
 // UserConfig holds the user configuration, stored encrypted as a whole.
 //
 // All fields (including secret, access_token, refresh_token) are encrypted with AES-256-GCM
-// and written to the <open_id>.enc file; plaintext is never persisted to disk.
+// and written to the <open_id>/data.enc file; plaintext is never persisted to disk.
 // Use GetUserConfig / SaveUserConfig / ClearUserConfig for read/write;
 // do not directly manipulate the underlying encrypted file.
 type UserConfig struct {
+	Name                string `json:"name,omitempty"`                  // Account alias (user-chosen, non-secret); defaults to OpenId when unset
 	SdkId               string `json:"sdk_id,omitempty"`                // Application ID
 	OpenId              string `json:"open_id,omitempty"`               // User openId, unique identifier for the user (unique per OAuth application per user)
 	AccessToken         string `json:"access_token,omitempty"`          // User accessToken (encrypted storage, plaintext never persisted)
@@ -23,12 +24,25 @@ type UserConfig struct {
 	RefreshTokenExpires int64  `json:"refresh_token_expires,omitempty"` // refresh_token expiry time, Unix timestamp (seconds)
 }
 
+// AccountEntry is a non-sensitive registry entry mapping a user-chosen account alias
+// to its server-assigned OpenId (which is also the storage folder name).
+// Stored in plaintext in config.json alongside the active account selection.
+type AccountEntry struct {
+	Name   string `json:"name"`             // Account alias, unique within the registry
+	OpenId string `json:"open_id"`          // Server-assigned OpenId; also the storage folder name
+	SdkId  string `json:"sdk_id,omitempty"` // Application ID
+}
+
 // AppMeta holds application metadata, stored in plaintext in config.json.
 //
-// Contains only non-sensitive information, used to locate the encrypted file (<open_id>.enc) for the current active user.
-// Supports multi-application scenarios: each application has its own .enc file, identified by ActiveOpenId.
+// Contains only non-sensitive information: the account registry (alias → openId) and the
+// currently active account. The active account is resolved via ActiveName against Accounts;
+// ActiveOpenId is retained as a legacy fallback for older config.json files written by
+// single-account releases, so existing installs continue to work without re-login.
 type AppMeta struct {
-	ActiveOpenId string `json:"active_open_id"` // OpenId of the currently active user
+	ActiveName   string         `json:"active_name,omitempty"`    // Alias of the currently active account
+	Accounts     []AccountEntry `json:"accounts,omitempty"`       // Registered accounts
+	ActiveOpenId string         `json:"active_open_id,omitempty"` // Legacy: OpenId of the active user (pre-multi-account)
 }
 
 // userConfig is the in-memory cached user configuration to avoid repeated decryption.

@@ -74,6 +74,9 @@ func (o *StatusOptions) Run(cmd *cobra.Command, args []string) error {
 
 	// Show login status.
 	output.PrintInfof(cmd, "Logged in")
+	if userConfig.Name != "" {
+		output.PrintInfof(cmd, "  Account:  %s", userConfig.Name)
+	}
 	output.PrintInfof(cmd, "  OpenId:  %s", userConfig.OpenId)
 	if userName != "" {
 		output.PrintInfof(cmd, "  UserName:  %s", userName)

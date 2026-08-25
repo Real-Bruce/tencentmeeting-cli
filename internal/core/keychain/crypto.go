@@ -190,10 +190,23 @@ func readEncFile(filePath string) ([]byte, error) {
 	return data, nil
 }
 
-// encFilePath 拼接加密数据文件的完整路径。
-// 格式: <dataDir>/<account>.enc
+// accountDir returns the per-account storage directory: <dataDir>/<account>.
+// Each account gets its own folder (named by OpenId) holding an independent master key
+// and encrypted data file, achieving per-account key isolation.
+func accountDir(dataDir, account string) string {
+	return filepath.Join(dataDir, account)
+}
+
+// encFilePath returns the full path to the encrypted data file.
+// Layout: <dataDir>/<account>/data.enc
 func encFilePath(dataDir, account string) string {
-	return filepath.Join(dataDir, account+".enc")
+	return filepath.Join(accountDir(dataDir, account), "data.enc")
+}
+
+// masterKeyPath returns the full path to the per-account master key file.
+// Layout: <dataDir>/<account>/master.key
+func masterKeyPath(dataDir, account string) string {
+	return filepath.Join(accountDir(dataDir, account), "master.key")
 }
 
 // zeroBytes zeroes out a byte slice to securely erase sensitive data from memory.

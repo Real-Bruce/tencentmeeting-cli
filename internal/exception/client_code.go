@@ -18,6 +18,10 @@ const (
 	ClientCodeUserIdentityExpired = 1006
 	// ClientCodeLogoutFailed logout failed error
 	ClientCodeLogoutFailed = 1007
+	// ClientCodeAccountNotFound account not found error
+	ClientCodeAccountNotFound = 1008
+	// ClientCodeAccountNameConflict account name conflict error
+	ClientCodeAccountNameConflict = 1009
 
 	// ClientCodeNetwork network error
 	ClientCodeNetwork = 2000

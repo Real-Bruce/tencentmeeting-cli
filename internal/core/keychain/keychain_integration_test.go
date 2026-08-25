@@ -77,9 +77,6 @@ func TestIntegrationEncFilesUnderDataDirUnixLike(t *testing.T) {
 	if testing.Short() {
 		t.Skip("short mode: skip filesystem layout check")
 	}
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows stores ciphertext in registry, no .enc under data dir")
-	}
 
 	dataDir := t.TempDir()
 	t.Setenv("TMEET_CLI_DATA_DIR", dataDir)
@@ -92,25 +89,68 @@ func TestIntegrationEncFilesUnderDataDirUnixLike(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	encPath := filepath.Join(dataDir, account+".enc")
+	// New per-account folder layout: <dataDir>/<account>/{master.key, data.enc}
+	encPath := filepath.Join(dataDir, account, "data.enc")
 	if _, err := os.Stat(encPath); err != nil {
-		t.Fatalf("expected .enc at %s: %v", encPath, err)
+		t.Fatalf("expected data.enc at %s: %v", encPath, err)
+	}
+	mkPath := filepath.Join(dataDir, account, "master.key")
+	if _, err := os.Stat(mkPath); err != nil {
+		t.Fatalf("expected master.key at %s: %v", mkPath, err)
 	}
 
 	raw, err := os.ReadFile(encPath)
 	if err != nil {
-		t.Fatalf("ReadFile .enc: %v", err)
+		t.Fatalf("ReadFile data.enc: %v", err)
 	}
 	if bytes.Contains(raw, []byte(`{"k":"v"}`)) {
-		t.Fatal(".enc file must not contain plaintext; data should be encrypted")
+		t.Fatal("data.enc file must not contain plaintext; data should be encrypted")
+	}
+}
+
+// TestIntegrationPerAccountMasterKeyIsolation verifies that each account gets its own master
+// key folder and that one account's ciphertext cannot be swapped into another account's folder.
+func TestIntegrationPerAccountMasterKeyIsolation(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("TMEET_CLI_DATA_DIR", dataDir)
+
+	kc := New()
+	accA := "iso-account-a"
+	accB := "iso-account-b"
+	t.Cleanup(func() {
+		_ = kc.Remove(ServiceName, accA)
+		_ = kc.Remove(ServiceName, accB)
+	})
+
+	if err := kc.Set(ServiceName, accA, `{"who":"A"}`); err != nil {
+		t.Fatal(err)
+	}
+	if err := kc.Set(ServiceName, accB, `{"who":"B"}`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Each account has its own master.key file.
+	mkA := filepath.Join(dataDir, accA, "master.key")
+	mkB := filepath.Join(dataDir, accB, "master.key")
+	aBytes, _ := os.ReadFile(mkA)
+	bBytes, _ := os.ReadFile(mkB)
+	if bytes.Equal(aBytes, bBytes) {
+		t.Fatal("per-account master keys should differ between accounts")
+	}
+
+	// Swap account A's data.enc into account B's folder (cross-account replacement attack).
+	encA := filepath.Join(dataDir, accA, "data.enc")
+	encB := filepath.Join(dataDir, accB, "data.enc")
+	aEnc, _ := os.ReadFile(encA)
+	_ = atomicWriteFile(encB, aEnc)
+
+	_, err := kc.Get(ServiceName, accB)
+	if err == nil {
+		t.Fatal("Get should fail when account A's ciphertext is placed in account B's folder (master key + AAD mismatch)")
 	}
 }
 
 func TestIntegrationLoadExistingMasterKey(t *testing.T) {
-	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
-		t.Skip("master key not stored as file on " + runtime.GOOS)
-	}
-
 	dataDir := t.TempDir()
 	t.Setenv("TMEET_CLI_DATA_DIR", dataDir)
 
@@ -122,6 +162,7 @@ func TestIntegrationLoadExistingMasterKey(t *testing.T) {
 		t.Fatalf("Set with kc1: %v", err)
 	}
 
+	// A fresh instance must reload the per-account master key from disk and decrypt the data.
 	kc2 := New()
 	got, err := kc2.Get(ServiceName, account)
 	if err != nil {
@@ -135,15 +176,16 @@ func TestIntegrationLoadExistingMasterKey(t *testing.T) {
 }
 
 func TestIntegrationMasterKeyWrongSize(t *testing.T) {
-	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
-		t.Skip("master key not stored as file on " + runtime.GOOS)
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows master key is DPAPI-protected; raw wrong-size bytes fail via DPAPI, tested elsewhere")
 	}
 
 	dataDir := t.TempDir()
 	t.Setenv("TMEET_CLI_DATA_DIR", dataDir)
 
-	mkPath := filepath.Join(dataDir, MasterKeyAccount)
-	if err := os.MkdirAll(dataDir, 0700); err != nil {
+	account := "bad-masterkey"
+	mkPath := masterKeyPath(dataDir, account)
+	if err := os.MkdirAll(filepath.Dir(mkPath), 0700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(mkPath, []byte("too-short-key"), 0600); err != nil {
@@ -151,15 +193,15 @@ func TestIntegrationMasterKeyWrongSize(t *testing.T) {
 	}
 
 	kc := New()
-	_, err := kc.Get(ServiceName, "any-account")
+	_, err := kc.Get(ServiceName, account)
 	if err == nil {
 		t.Fatal("Get should fail when master key file has wrong size")
 	}
 }
 
 func TestIntegrationMasterKeyFilePermission(t *testing.T) {
-	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
-		t.Skip("master key not stored as file on " + runtime.GOOS)
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission check not applicable on Windows")
 	}
 
 	dataDir := t.TempDir()
@@ -173,7 +215,7 @@ func TestIntegrationMasterKeyFilePermission(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mkPath := filepath.Join(dataDir, MasterKeyAccount)
+	mkPath := masterKeyPath(dataDir, account)
 	info, err := os.Stat(mkPath)
 	if err != nil {
 		t.Fatalf("Stat master key: %v", err)

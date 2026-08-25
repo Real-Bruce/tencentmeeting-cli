@@ -10,12 +10,13 @@
 ## 功能特性
 
 - 🔐 **OAuth2 授权登录** — 设备码授权流程，安全无密码
+- 👤 **多账号管理** — 同时登录多个账号，按自定义别名（如 `token-qtj`）区分，一键切换活跃账号
 - 📅 **会议管理** — 创建、查询、更新、取消会议，支持周期性会议，管理受邀成员
 - 🎬 **录制管理** — 查询录制列表、获取下载地址、智能纪要、转写详情与搜索
 - 📊 **参会报告** — 查询参会人列表、等候室成员记录
 - 👥 **通讯录** — 按用户名/职位/部门检索企业通讯录成员
 - 🛠️ **问题排查** — 导出本地日志，支持按时间范围过滤，打包为 zip 文件
-- 🔒 **安全存储** — 凭证使用 AES-256-GCM 加密，明文不落盘
+- 🔒 **安全存储** — 凭证使用 AES-256-GCM 加密，明文不落盘；每个账号独立主密钥，按 OpenId 隔离存储
 - 🖥️ **跨平台** — 支持 macOS、Linux、Windows
 
 ## 安装
@@ -60,6 +61,15 @@ tmeet auth login
 
 > 如需禁用自动打开浏览器，可使用 `--no-browser` 参数：`tmeet auth login --no-browser`
 
+需要同时登录多个账号时，用 `--name` 为每个账号指定别名（详见[多账号管理](#多账号管理)）：
+
+```bash
+tmeet auth login --name token-qtj   # 登录并命名为 token-qtj
+tmeet auth login --name token-qx    # 再登录一个，命名为 token-qx
+tmeet auth list                     # 查看所有已登录账号
+tmeet auth use token-qtj            # 切换活跃账号到 token-qtj
+```
+
 ### 2. 创建会议
 
 ```bash
@@ -84,8 +94,54 @@ tmeet meeting list-ended \
 ### 4. 登出
 
 ```bash
-tmeet auth logout
+tmeet auth logout              # 登出当前活跃账号
+tmeet auth logout token-qx     # 登出指定别名的账号
 ```
+
+---
+
+## 多账号管理
+
+`tmeet` 支持同时登录多个腾讯会议账号，每个账号用自定义别名（如 `token-qtj`、`token-qx`、`token-dt`）标识，可随时切换活跃账号。所有命令都针对当前活跃账号执行。
+
+### 登录多个账号
+
+用 `--name` 给账号起别名；别名允许字母、数字、下划线、连字符，缺省时自动用服务端返回的 OpenId 作为别名。
+
+```bash
+tmeet auth login --name token-qtj
+tmeet auth login --name token-qx
+tmeet auth login --name token-dt
+```
+
+- 新登录的账号自动成为活跃账号。
+- 若 `--name` 指定的别名已存在且其 refresh token 仍有效，会提示已登录、引导用 `auth use` 切换，不再重复发起授权。
+- 同名绑定的若是不同账号（OpenId 不同）会报别名冲突，请换一个别名。
+- 重新登录同一账号（OpenId 相同）可更新别名或刷新凭证。
+
+### 查看与切换
+
+```bash
+# 列出全部已登录账号（别名 / openId / 是否活跃 / refresh token 状态）
+tmeet auth list
+
+# 切换活跃账号
+tmeet auth use token-qx
+```
+
+### 凭证隔离存储
+
+每个账号的凭证独立加密存储在以 OpenId 命名的文件夹下，互不影响：
+
+```
+<数据目录>/<openId>/
+    ├── master.key   # 该账号独立的主密钥（Windows 经 DPAPI 保护，Linux/macOS 为 0600 文件）
+    └── data.enc      # AES-256-GCM 加密的凭证（AAD 绑定 openId，防跨账号替换）
+```
+
+### 旧版账号自动迁移
+
+从单账号旧版本升级后，首次启动会自动把旧布局凭证迁移到上述按 OpenId 隔离的新布局，并在账号注册表中登记；迁移不删除旧数据、失败不阻塞启动，无需重新登录。详见[配置说明](#配置说明)。
 
 ---
 
@@ -117,7 +173,8 @@ tmeet auth logout
 
 | 域 | tool | 说明 |
 |------|------|------|
-| auth | `auth_login_url` / `auth_login_poll` | 获取授权 URL / 单次轮询登录结果（双 tool 非阻塞登录） |
+| auth | `auth_login_url` / `auth_login_poll` | 获取授权 URL / 单次轮询登录结果（双 tool 非阻塞登录，均支持可选 `name` 参数做多账号登录） |
+| auth | `auth_list` / `auth_use` | 列出全部已登录账号 / 按别名切换活跃账号 |
 | meeting | `meeting_list` / `meeting_list_ended` / `meeting_search` | 列出会议 / 已结束会议 / 搜索会议 |
 | meeting | `meeting_get` / `meeting_create` / `meeting_update` / `meeting_cancel` | 会议详情 / 创建 / 更新 / 取消 |
 | meeting | `meeting_invitees_list` / `_add` / `_remove` / `_replace` | 受邀者管理 |
@@ -211,9 +268,11 @@ tmeet record list \
 ```
 tmeet [--format json|json-pretty] [--compact] [-V]
 ├── auth
-│   ├── login          # OAuth 授权登录
-│   ├── logout         # 登出并清除凭证
-│   └── status         # 查看当前登录状态
+│   ├── login          # OAuth 授权登录（--name 指定账号别名，支持多账号）
+│   ├── logout         # 登出并清除凭证（可指定别名登出某个账号）
+│   ├── status         # 查看当前登录状态
+│   ├── list           # 列出全部已登录账号
+│   └── use            # 切换活跃账号
 ├── meeting
 │   ├── create         # 创建会议（支持普通/周期性）
 │   ├── update         # 更新会议信息
@@ -259,7 +318,7 @@ tmeet [--format json|json-pretty] [--compact] [-V]
 
 #### `auth login`
 
-登录并完成 OAuth2 授权，将凭证加密保存到本地。
+登录并完成 OAuth2 授权，将凭证加密保存到本地。支持用 `--name` 为账号指定别名以实现多账号登录。
 
 ```bash
 tmeet auth login [选项]
@@ -267,33 +326,100 @@ tmeet auth login [选项]
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|:----:|--------|------|
+| `--name` | string | — | — | 账号别名（如 `token-qtj`），用于多账号区分；缺省时自动用服务端返回的 OpenId 作为别名。允许字母、数字、下划线、连字符 |
 | `--no-browser` | bool | — | `false` | 禁用自动打开浏览器。`false`（默认）会尝试自动打开系统默认浏览器跳转到授权 URL；`true` 则仅输出授权 URL，需用户手动在浏览器中打开 |
 
-执行后会输出授权 URL，CLI 自动轮询授权结果（超时 5 分钟），凭证加密保存到本地。
+执行后会输出授权 URL，CLI 自动轮询授权结果（超时 5 分钟），凭证加密保存到本地，新登录的账号自动设为活跃账号。若 `--name` 指定的账号已登录且 refresh token 仍有效，会提示已登录并引导用 `auth use` 切换，不再重复授权。
+
+**示例：**
+
+```bash
+# 单账号登录
+tmeet auth login
+
+# 多账号：分别命名登录
+tmeet auth login --name token-qtj
+tmeet auth login --name token-qx
+```
 
 ---
 
 #### `auth logout`
 
-登出并清除本地认证凭证。
+登出并清除本地认证凭证。可指定别名登出某个账号，不指定则登出当前活跃账号。
 
 ```bash
-tmeet auth logout
+tmeet auth logout [name]
 ```
 
-> 无参数。
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|:----:|--------|------|
+| `name` | string | — | 活跃账号 | 要登出的账号别名；不传则登出当前活跃账号。登出活跃账号后，活跃指针自动切到剩余的第一个账号 |
+
+**示例：**
+
+```bash
+# 登出当前活跃账号
+tmeet auth logout
+
+# 登出指定账号（不影响活跃账号，除非登出的正是活跃账号）
+tmeet auth logout token-qx
+```
 
 ---
 
 #### `auth status`
 
-查看当前登录状态，包括 OpenId、AccessToken / RefreshToken 的过期状态和剩余有效时间。
+查看当前活跃账号的登录状态，包括别名、OpenId、AccessToken / RefreshToken 的过期状态和剩余有效时间。
 
 ```bash
 tmeet auth status
 ```
 
-> 无参数。未登录时提示 `Not logged in`，已登录时展示凭证有效期信息。
+> 无参数。未登录时提示 `Not logged in`，已登录时展示账号别名与凭证有效期信息。
+
+---
+
+#### `auth list`
+
+列出全部已登录账号，显示别名、OpenId、是否为活跃账号、refresh token 状态。
+
+```bash
+tmeet auth list
+```
+
+> 无参数。无需登录即可调用。
+
+**示例输出：**
+
+```
+- token-qtj (active)
+    openId: cli_xxxxxxxxxxxx
+    status:  refresh-token valid (remaining 29d 22h 15m)
+- token-qx
+    openId: cli_yyyyyyyyyyyy
+    status:  refresh-token expired
+```
+
+---
+
+#### `auth use`
+
+切换活跃账号到指定别名。后续命令都针对新的活跃账号执行。
+
+```bash
+tmeet auth use <name>
+```
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|:----:|------|
+| `name` | string | ✅ | 目标账号别名（可通过 `auth list` 查看）。账号不存在时返回错误 |
+
+**示例：**
+
+```bash
+tmeet auth use token-qtj
+```
 
 ---
 
@@ -1278,12 +1404,27 @@ tmeet tshoot feedback \
 
 ## 配置说明
 
-配置文件默认存储在 `~/.tmeet/` 目录下，支持通过环境变量覆盖：
+配置文件默认存储在 `~/.tmeet/` 目录下，加密凭证按账号隔离存储，支持通过环境变量覆盖：
 
 | 环境变量 | 说明 | 默认值 |
 |----------|------|--------|
-| `TMEET_CLI_CONFIG_DIR` | 配置文件目录 | `~/.tmeet/` |
-| `TMEET_CLI_DATA_DIR` | 加密数据目录 | 平台相关默认路径 |
+| `TMEET_CLI_CONFIG_DIR` | 配置文件目录（明文 `config.json`） | `~/.tmeet/` |
+| `TMEET_CLI_DATA_DIR` | 加密凭证数据目录（按账号分子目录） | 平台相关默认路径 |
+
+**存储布局：**
+
+- `config.json`（明文，非敏感）：账号注册表 `accounts`（别名 → openId 映射）+ 当前活跃账号 `active_name`；旧版的 `active_open_id` 字段保留作回退兼容。
+- 加密数据目录下每个账号一个以 OpenId 命名的文件夹：
+
+  ```
+  <数据目录>/<openId>/
+      ├── master.key   # 该账号独立主密钥（Windows 经 DPAPI 保护；Linux/macOS 为 0600 文件）
+      └── data.enc      # AES-256-GCM 加密的凭证 JSON（AAD 绑定 openId）
+  ```
+
+  各账号主密钥相互隔离，单个账号密钥泄露不影响其他账号。
+
+**自动迁移：** 从单账号旧版本升级时，首次启动会自动把旧布局凭证（Windows 注册表 / Linux 文件 / macOS Keychain）迁移到上述按 OpenId 隔离的新布局并登记到注册表，无需重新登录。迁移幂等、不删旧数据、失败不阻塞。
 
 > **注意**：所有时间参数均使用 **ISO 8601** 格式，例如 `2026-04-10T14:00+08:00`。响应中的时间戳字段会自动转换为 ISO 8601 格式展示。
 

@@ -590,3 +590,188 @@ func TestSaveUserConfigKeychainSetError(t *testing.T) {
 		t.Errorf("error should wrap 'failed to save encrypted config', got: %v", err)
 	}
 }
+
+// --- 多账号新 API 测试 ---
+
+func TestMultiAccountNamedLifecycle(t *testing.T) {
+	_, cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	// 登录两个命名账号
+	cfgA := &UserConfig{Name: "token-qtj", OpenId: "open_qtj", AccessToken: "ta"}
+	cfgB := &UserConfig{Name: "token-qx", OpenId: "open_qx", AccessToken: "tb"}
+	if err := SaveUserConfig(cfgA); err != nil {
+		t.Fatalf("Save A: %v", err)
+	}
+	if err := SaveUserConfig(cfgB); err != nil {
+		t.Fatalf("Save B: %v", err)
+	}
+
+	// 活跃账号应为最后登录的 B
+	got, err := GetUserConfig()
+	if err != nil || got == nil || got.Name != "token-qx" || got.AccessToken != "tb" {
+		t.Fatalf("active should be B, got: %+v err=%v", got, err)
+	}
+
+	// ListAccounts 返回两个账号
+	accounts, err := ListAccounts()
+	if err != nil {
+		t.Fatalf("ListAccounts: %v", err)
+	}
+	if len(accounts) != 2 {
+		t.Fatalf("want 2 accounts, got %d", len(accounts))
+	}
+
+	// 切换到 A
+	if err := SwitchAccount("token-qtj"); err != nil {
+		t.Fatalf("Switch to A: %v", err)
+	}
+	got, _ = GetUserConfig()
+	if got == nil || got.Name != "token-qtj" || got.AccessToken != "ta" {
+		t.Fatalf("after switch, active should be A, got: %+v", got)
+	}
+	if GetActiveAccountName() != "token-qtj" {
+		t.Errorf("active name = %q, want token-qtj", GetActiveAccountName())
+	}
+
+	// 切换到不存在的账号应报 AccountNotFoundError
+	if err := SwitchAccount("nope"); err == nil {
+		t.Fatal("Switch to nonexistent should fail")
+	}
+}
+
+func TestSaveUserConfigNameConflict(t *testing.T) {
+	_, cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	cfgA := &UserConfig{Name: "token-qtj", OpenId: "open_qtj"}
+	if err := SaveUserConfig(cfgA); err != nil {
+		t.Fatalf("Save A: %v", err)
+	}
+	// 同名映射到不同 openId → 冲突
+	cfgC := &UserConfig{Name: "token-qtj", OpenId: "open_other"}
+	err := SaveUserConfig(cfgC)
+	if err == nil {
+		t.Fatal("SaveUserConfig should reject alias bound to a different OpenId")
+	}
+}
+
+func TestReLoginSameAccountUpdatesAlias(t *testing.T) {
+	_, cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	cfg := &UserConfig{Name: "token-qtj", OpenId: "open_qtj", AccessToken: "t1"}
+	if err := SaveUserConfig(cfg); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	// 同 openId 重新登录，更新别名与 token
+	cfg2 := &UserConfig{Name: "qtj-renamed", OpenId: "open_qtj", AccessToken: "t2"}
+	if err := SaveUserConfig(cfg2); err != nil {
+		t.Fatalf("re-Save: %v", err)
+	}
+	accounts, _ := ListAccounts()
+	if len(accounts) != 1 {
+		t.Fatalf("want 1 account after rename, got %d", len(accounts))
+	}
+	if accounts[0].Name != "qtj-renamed" {
+		t.Errorf("alias = %q, want qtj-renamed", accounts[0].Name)
+	}
+	ResetCache()
+	got, _ := GetUserConfig()
+	if got == nil || got.AccessToken != "t2" || got.Name != "qtj-renamed" {
+		t.Fatalf("re-login did not update: %+v", got)
+	}
+}
+
+func TestClearAccountByName(t *testing.T) {
+	_, cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	cfgA := &UserConfig{Name: "token-qtj", OpenId: "open_qtj"}
+	cfgB := &UserConfig{Name: "token-qx", OpenId: "open_qx"}
+	_ = SaveUserConfig(cfgA)
+	_ = SaveUserConfig(cfgB)
+
+	// 登出指定账号 A（非活跃），活跃应保持 B
+	if err := ClearAccount("token-qtj"); err != nil {
+		t.Fatalf("ClearAccount A: %v", err)
+	}
+	accounts, _ := ListAccounts()
+	if len(accounts) != 1 || accounts[0].Name != "token-qx" {
+		t.Fatalf("after clearing A, want only B left, got %+v", accounts)
+	}
+	ResetCache()
+	got, _ := GetUserConfig()
+	if got == nil || got.Name != "token-qx" {
+		t.Fatalf("active should still be B, got %+v", got)
+	}
+
+	// 登出不存在的账号
+	if err := ClearAccount("nope"); err == nil {
+		t.Fatal("ClearAccount nonexistent should fail")
+	}
+}
+
+func TestClearAccountReassignsActive(t *testing.T) {
+	_, cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	cfgA := &UserConfig{Name: "token-qtj", OpenId: "open_qtj"}
+	cfgB := &UserConfig{Name: "token-qx", OpenId: "open_qx"}
+	_ = SaveUserConfig(cfgA)
+	_ = SaveUserConfig(cfgB) // active = B
+
+	// 登出活跃账号 B → 活跃应切到剩余的 A
+	if err := ClearAccount("token-qx"); err != nil {
+		t.Fatalf("ClearAccount B: %v", err)
+	}
+	if name := GetActiveAccountName(); name != "token-qtj" {
+		t.Errorf("active should reassign to A, got %q", name)
+	}
+	ResetCache()
+	got, _ := GetUserConfig()
+	if got == nil || got.OpenId != "open_qtj" {
+		t.Fatalf("active should be A after clearing B, got %+v", got)
+	}
+}
+
+func TestGetAccountConfigByName(t *testing.T) {
+	_, cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	cfgA := &UserConfig{Name: "token-qtj", OpenId: "open_qtj", AccessToken: "ta"}
+	cfgB := &UserConfig{Name: "token-qx", OpenId: "open_qx", AccessToken: "tb"}
+	_ = SaveUserConfig(cfgA)
+	_ = SaveUserConfig(cfgB) // active = B
+
+	// 按名读取 A（非活跃），不影响活跃账号
+	got, err := GetAccountConfig("token-qtj")
+	if err != nil || got == nil || got.AccessToken != "ta" {
+		t.Fatalf("GetAccountConfig(A) = %+v err=%v", got, err)
+	}
+	// 活跃仍为 B
+	if active, _ := GetUserConfig(); active == nil || active.Name != "token-qx" {
+		t.Errorf("active should remain B after GetAccountConfig(A)")
+	}
+
+	// 不存在的账号返回 (nil, nil)
+	got, err = GetAccountConfig("nope")
+	if err != nil || got != nil {
+		t.Fatalf("GetAccountConfig(unknown) = %+v err=%v", got, err)
+	}
+}
+
+func TestSaveUserConfigNameDefaultsToOpenId(t *testing.T) {
+	_, cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	// 不传 name → 别名默认为 openId（兼容单账号调用方）
+	cfg := &UserConfig{OpenId: "open_default", AccessToken: "t"}
+	if err := SaveUserConfig(cfg); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	accounts, _ := ListAccounts()
+	if len(accounts) != 1 || accounts[0].Name != "open_default" {
+		t.Fatalf("default name should equal openId, got %+v", accounts)
+	}
+}

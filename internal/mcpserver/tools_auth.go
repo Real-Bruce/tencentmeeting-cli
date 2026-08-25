@@ -27,16 +27,25 @@ type authLoginPollResult struct {
 	Message string `json:"message,omitempty"`
 }
 
+// accountEntryResult is the JSON shape returned by auth_list for each account.
+type accountEntryResult struct {
+	Name       string `json:"name"`
+	OpenId     string `json:"open_id"`
+	Active     bool   `json:"active"`
+	TokenState string `json:"token_state,omitempty"`
+}
+
 // registerAuthTools 注册 auth 域 MCP tool。
 // 登录拆成双 tool：auth_login_url（取 URL，立即返回）+ auth_login_poll（单次轮询，非阻塞），
-// 模型引导用户打开浏览器后重复调用 poll 直至 success。
+// 模型引导用户打开浏览器后重复调用 poll 直至 success。两个 tool 均支持可选 name 参数用于多账号。
 func (s *Server) registerAuthTools() {
 	// --- auth_login_url ---
 	s.mcpSrv.AddTool(
 		mcp.NewTool("auth_login_url",
 			mcp.WithDescription(`Get the OAuth authorization URL for Tencent Meeting login.
-Returns authorize_url (open in browser) and code (pass to auth_login_poll). If already logged in, returns already_login=true and no URL needed.
-After getting the URL, ask the user to open it in their browser to authorize, then call auth_login_poll with the code.`),
+Returns authorize_url (open in browser) and code (pass to auth_login_poll). If the named account (or the active account when name is omitted) is already logged in, returns already_login=true and no URL.
+After getting the URL, ask the user to open it in their browser to authorize, then call auth_login_poll with the code (and the same name).`),
+			mcp.WithString("name", mcp.Description("optional account alias for multi-account login, e.g. token-qtj; pass the same value to auth_login_poll")),
 		),
 		s.handleAuthLoginURL,
 	)
@@ -46,10 +55,28 @@ After getting the URL, ask the user to open it in their browser to authorize, th
 		mcp.NewTool("auth_login_poll",
 			mcp.WithDescription(`Poll once for OAuth login completion. Pass the code from auth_login_url.
 Returns status: "pending" (user hasn't completed authorization yet, retry after a few seconds), "success" (login complete), or error.
-On pending, ask the user to complete authorization in browser and retry this tool.`),
+On pending, ask the user to complete authorization in browser and retry this tool. Pass the same name used in auth_login_url to label the account.`),
 			mcp.WithString("code", mcp.Required(), mcp.Description("authorization code from auth_login_url")),
+			mcp.WithString("name", mcp.Description("optional account alias for multi-account login, must match the name passed to auth_login_url")),
 		),
 		s.handleAuthLoginPoll,
+	)
+
+	// --- auth_list ---
+	s.mcpSrv.AddTool(
+		mcp.NewTool("auth_list",
+			mcp.WithDescription(`List all logged-in accounts with their alias, openId, active marker, and refresh-token state. No login required.`),
+		),
+		s.handleAuthList,
+	)
+
+	// --- auth_use ---
+	s.mcpSrv.AddTool(
+		mcp.NewTool("auth_use",
+			mcp.WithDescription(`Switch the active account to a previously logged-in account by its alias. Subsequent tools operate against the switched account.`),
+			mcp.WithString("name", mcp.Required(), mcp.Description("account alias to switch to (see auth_list)")),
+		),
+		s.handleAuthUse,
 	)
 }
 
@@ -58,13 +85,21 @@ func (s *Server) handleAuthLoginURL(ctx context.Context, req mcp.CallToolRequest
 	ctx = context.WithValue(ctx, log.CtxTraceIDKey, log.GenerateTraceID())
 	s.tmeet.CmdPath = "mcp/auth_login_url"
 
+	name := req.GetString("name", "")
+
 	lockPath := config.GetTokenLockPath()
 	var r authLoginURLResult
 	if err := filelock.WithLock(lockPath, func() error {
 		config.ResetCache()
-		userConfig, _ := config.GetUserConfig()
-		if userConfig != nil && userConfig.RefreshTokenExpires > time.Now().Unix() {
-			r = authLoginURLResult{AlreadyLogin: true, Message: "already logged in, no need to authorize again"}
+		// Multi-account: only treat as already-logged-in for the targeted account.
+		var existing *config.UserConfig
+		if name != "" {
+			existing, _ = config.GetAccountConfig(name)
+		} else {
+			existing, _ = config.GetUserConfig()
+		}
+		if existing != nil && existing.RefreshTokenExpires > time.Now().Unix() {
+			r = authLoginURLResult{AlreadyLogin: true, Message: "account already logged in, no need to authorize again"}
 			return nil
 		}
 		tmeetAuth := auth.NewTmeetAuth(s.tmeet)
@@ -91,6 +126,7 @@ func (s *Server) handleAuthLoginPoll(ctx context.Context, req mcp.CallToolReques
 	if err != nil {
 		return errorResult(exception.InvalidArgsError.With("code is required: %v", err)), nil
 	}
+	name := req.GetString("name", "")
 
 	tmeetAuth := auth.NewTmeetAuth(s.tmeet)
 	tokenData, err := tmeetAuth.PollOauth2Once(ctx, code)
@@ -109,6 +145,7 @@ func (s *Server) handleAuthLoginPoll(ctx context.Context, req mcp.CallToolReques
 
 	// 授权成功，保存凭证
 	userConfig := &config.UserConfig{
+		Name:         name,
 		SdkId:        tokenData.SdkId,
 		OpenId:       tokenData.OpenID,
 		AccessToken:  tokenData.AccessToken,
@@ -128,9 +165,72 @@ func (s *Server) handleAuthLoginPoll(ctx context.Context, req mcp.CallToolReques
 	// 同步到内存中的 tmeet，后续 tool 即可用新凭证
 	s.tmeet.UserConfig = userConfig
 
+	accountName := name
+	if accountName == "" {
+		accountName = tokenData.OpenID
+	}
 	out, _ := emitJSON(authLoginPollResult{
 		Status:  "success",
-		Message: "login successful, other tools are now available",
+		Message: "login successful for account " + accountName + ", other tools are now available",
+	})
+	return mcp.NewToolResultText(out), nil
+}
+
+// handleAuthList 列出全部已登录账号。
+func (s *Server) handleAuthList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = context.WithValue(ctx, log.CtxTraceIDKey, log.GenerateTraceID())
+	s.tmeet.CmdPath = "mcp/auth_list"
+
+	accounts, err := config.ListAccounts()
+	if err != nil {
+		return errorResult(err), nil
+	}
+	activeName := config.GetActiveAccountName()
+	now := time.Now().Unix()
+
+	out := make([]accountEntryResult, 0, len(accounts))
+	for _, a := range accounts {
+		entry := accountEntryResult{
+			Name:   a.Name,
+			OpenId: a.OpenId,
+			Active: a.Name == activeName,
+		}
+		if acct, _ := config.GetAccountConfig(a.Name); acct != nil && acct.RefreshTokenExpires > 0 {
+			if now >= acct.RefreshTokenExpires {
+				entry.TokenState = "refresh-token expired"
+			} else {
+				remaining := time.Duration(acct.RefreshTokenExpires-now) * time.Second
+				entry.TokenState = "refresh-token valid (remaining " + remaining.String() + ")"
+			}
+		}
+		out = append(out, entry)
+	}
+
+	data, _ := emitJSON(out)
+	return mcp.NewToolResultText(data), nil
+}
+
+// handleAuthUse 切换活跃账号。
+func (s *Server) handleAuthUse(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = context.WithValue(ctx, log.CtxTraceIDKey, log.GenerateTraceID())
+	s.tmeet.CmdPath = "mcp/auth_use"
+
+	name, err := req.RequireString("name")
+	if err != nil {
+		return errorResult(exception.InvalidArgsError.With("name is required: %v", err)), nil
+	}
+
+	if err := config.SwitchAccount(name); err != nil {
+		return errorResult(err), nil
+	}
+	// 同步到内存中的 tmeet，确保长进程持有新活跃账号凭证。
+	if cfg, _ := config.GetUserConfig(); cfg != nil {
+		s.tmeet.UserConfig = cfg
+	}
+
+	out, _ := emitJSON(map[string]string{
+		"status":  "success",
+		"message": "switched to account " + name,
 	})
 	return mcp.NewToolResultText(out), nil
 }

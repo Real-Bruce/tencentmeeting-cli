@@ -20,6 +20,10 @@ func NewBaseCmd(tmeet *internal.Tmeet) *cobra.Command {
 		newLogoutCmd(tmeet),
 		// Status query
 		newStatusCmd(tmeet),
+		// List accounts
+		newListCmd(tmeet),
+		// Switch active account
+		newUseCmd(tmeet),
 	)
 
 	return cmd

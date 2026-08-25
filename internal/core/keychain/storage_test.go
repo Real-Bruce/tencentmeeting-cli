@@ -128,9 +128,17 @@ func TestReadEncFileUnreadable(t *testing.T) {
 
 func TestEncFilePath(t *testing.T) {
 	got := encFilePath("/data/tmeet", "sdk123")
-	want := filepath.Join("/data/tmeet", "sdk123.enc")
+	want := filepath.Join("/data/tmeet", "sdk123", "data.enc")
 	if got != want {
 		t.Fatalf("encFilePath() = %q, want %q", got, want)
+	}
+}
+
+func TestMasterKeyPath(t *testing.T) {
+	got := masterKeyPath("/data/tmeet", "sdk123")
+	want := filepath.Join("/data/tmeet", "sdk123", "master.key")
+	if got != want {
+		t.Fatalf("masterKeyPath() = %q, want %q", got, want)
 	}
 }
 

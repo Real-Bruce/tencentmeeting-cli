@@ -10,12 +10,13 @@ A command-line interface (CLI) tool for Tencent Meeting, based on Tencent Meetin
 ## Features
 
 - 🔐 **OAuth2 Authorization** — Device code authorization flow, secure and passwordless
+- 👤 **Multi-Account** — Log in to multiple accounts at once, label each with a custom alias (e.g. `token-qtj`), and switch the active account instantly
 - 📅 **Meeting Management** — Create, query, update, and cancel meetings; supports recurring meetings and invitee management
 - 🎬 **Recording Management** — Query recording lists, get download URLs, smart minutes, transcript details and search
 - 📊 **Attendance Reports** — Query participant lists and waiting room member records
 - 👥 **Contacts** — Search enterprise contact members by username, job title, or department
 - 🛠️ **Troubleshooting** — Export local logs with optional time range filter, packaged as a zip file
-- 🔒 **Secure Storage** — Credentials encrypted with AES-256-GCM, no plaintext stored on disk
+- 🔒 **Secure Storage** — Credentials encrypted with AES-256-GCM, no plaintext on disk; each account has an isolated master key stored under its own OpenId folder
 - 🖥️ **Cross-Platform** — Supports macOS, Linux, and Windows
 
 ## Installation
@@ -60,6 +61,15 @@ This automatically attempts to open the system default browser to the authorizat
 
 > To disable auto-opening the browser, use the `--no-browser` flag: `tmeet auth login --no-browser`
 
+To log in to multiple accounts, give each a `--name` alias (see [Multi-Account Management](#multi-account-management)):
+
+```bash
+tmeet auth login --name token-qtj   # log in and name it token-qtj
+tmeet auth login --name token-qx    # log in another, named token-qx
+tmeet auth list                     # list all logged-in accounts
+tmeet auth use token-qtj            # switch the active account to token-qtj
+```
+
 ### 2. Create a Meeting
 
 ```bash
@@ -84,8 +94,54 @@ tmeet meeting list-ended \
 ### 4. Logout
 
 ```bash
-tmeet auth logout
+tmeet auth logout              # log out the active account
+tmeet auth logout token-qx     # log out a specific account by alias
 ```
+
+---
+
+## Multi-Account Management
+
+`tmeet` supports logging in to multiple Tencent Meeting accounts at the same time. Each account is labeled with a custom alias (e.g. `token-qtj`, `token-qx`, `token-dt`) and you can switch the active account at any time. All commands operate against the currently active account.
+
+### Log in to multiple accounts
+
+Use `--name` to give an account an alias. Aliases allow letters, digits, underscores, and hyphens; when omitted, the server-returned OpenId is used as the alias.
+
+```bash
+tmeet auth login --name token-qtj
+tmeet auth login --name token-qx
+tmeet auth login --name token-dt
+```
+
+- A newly logged-in account becomes the active account.
+- If the `--name` alias already exists and its refresh token is still valid, the CLI reports it as logged in and suggests `auth use` to switch, without re-authorizing.
+- Reusing the same alias for a different account (different OpenId) is rejected as a conflict — pick another alias.
+- Re-logging in the same account (same OpenId) updates its alias or refreshes its credentials.
+
+### List & switch
+
+```bash
+# List all logged-in accounts (alias / openId / active marker / refresh-token status)
+tmeet auth list
+
+# Switch the active account
+tmeet auth use token-qx
+```
+
+### Isolated credential storage
+
+Each account's credentials are encrypted and stored independently under a folder named by its OpenId, so accounts never affect each other:
+
+```
+<data-dir>/<openId>/
+    ├── master.key   # this account's own master key (DPAPI-protected on Windows; 0600 file on Linux/macOS)
+    └── data.enc      # AES-256-GCM encrypted credentials (AAD bound to openId, blocks cross-account replacement)
+```
+
+### Automatic migration of legacy accounts
+
+When upgrading from a single-account release, the first startup automatically migrates legacy-layout credentials into the new per-OpenId isolated layout and registers them in the account registry — no re-login required. Migration is idempotent, never deletes legacy data, and never blocks startup. See [Configuration](#configuration).
 
 ---
 
@@ -167,9 +223,11 @@ tmeet record list \
 ```
 tmeet [--format json|json-pretty] [--compact] [-V]
 ├── auth
-│   ├── login          # OAuth authorization login
-│   ├── logout         # Logout and clear credentials
-│   └── status         # View current login status
+│   ├── login          # OAuth authorization login (--name sets an account alias for multi-account)
+│   ├── logout         # Logout and clear credentials (optional alias to log out a specific account)
+│   ├── status         # View current login status
+│   ├── list           # List all logged-in accounts
+│   └── use            # Switch the active account
 ├── meeting
 │   ├── create         # Create a meeting (regular or recurring)
 │   ├── update         # Update meeting information
@@ -215,7 +273,7 @@ tmeet [--format json|json-pretty] [--compact] [-V]
 
 #### `auth login`
 
-Login and complete OAuth2 authorization, saving credentials encrypted locally.
+Login and complete OAuth2 authorization, saving credentials encrypted locally. Use `--name` to label the account for multi-account login.
 
 ```bash
 tmeet auth login [options]
@@ -223,33 +281,100 @@ tmeet auth login [options]
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|:--------:|---------|-------------|
+| `--name` | string | — | — | Account alias (e.g. `token-qtj`) for multi-account login; defaults to the server-returned OpenId when omitted. Allows letters, digits, underscores, and hyphens |
 | `--no-browser` | bool | — | `false` | Disable auto-opening the browser. `false` (default) attempts to open the system default browser to the authorization URL automatically; `true` only prints the authorization URL and requires the user to open it manually. |
 
-After execution, the authorization URL is printed. The CLI polls for the authorization result automatically (timeout: 5 minutes) and saves the credentials encrypted locally.
+After execution, the authorization URL is printed. The CLI polls for the authorization result automatically (timeout: 5 minutes) and saves the credentials encrypted locally; the newly logged-in account becomes the active account. If the `--name` account is already logged in with a valid refresh token, the CLI reports it and suggests `auth use` instead of re-authorizing.
+
+**Examples:**
+
+```bash
+# Single-account login
+tmeet auth login
+
+# Multi-account: log in with distinct aliases
+tmeet auth login --name token-qtj
+tmeet auth login --name token-qx
+```
 
 ---
 
 #### `auth logout`
 
-Logout and clear local authentication credentials.
+Logout and clear local authentication credentials. Pass an alias to log out a specific account; omit it to log out the active account.
 
 ```bash
-tmeet auth logout
+tmeet auth logout [name]
 ```
 
-> No parameters.
+| Parameter | Type | Required | Default | Description |
+|-----------|------|:--------:|---------|-------------|
+| `name` | string | — | active account | Alias of the account to log out; omit for the active account. After logging out the active account, the active pointer moves to the first remaining account |
+
+**Examples:**
+
+```bash
+# Log out the active account
+tmeet auth logout
+
+# Log out a specific account (does not switch active unless it's the active one)
+tmeet auth logout token-qx
+```
 
 ---
 
 #### `auth status`
 
-View current login status, including OpenId, AccessToken / RefreshToken expiration status and remaining validity time.
+View the active account's login status, including alias, OpenId, and AccessToken / RefreshToken expiration status with remaining validity.
 
 ```bash
 tmeet auth status
 ```
 
-> No parameters. Displays `Not logged in` when not authenticated; shows credential validity information when logged in.
+> No parameters. Displays `Not logged in` when not authenticated; shows the account alias and credential validity when logged in.
+
+---
+
+#### `auth list`
+
+List all logged-in accounts, showing alias, OpenId, active marker, and refresh-token status.
+
+```bash
+tmeet auth list
+```
+
+> No parameters. No login required.
+
+**Example output:**
+
+```
+- token-qtj (active)
+    openId: cli_xxxxxxxxxxxx
+    status:  refresh-token valid (remaining 29d 22h 15m)
+- token-qx
+    openId: cli_yyyyyyyyyyyy
+    status:  refresh-token expired
+```
+
+---
+
+#### `auth use`
+
+Switch the active account to the given alias. Subsequent commands operate against the new active account.
+
+```bash
+tmeet auth use <name>
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|:--------:|-------------|
+| `name` | string | ✅ | Target account alias (see `auth list`). Returns an error if the account does not exist |
+
+**Example:**
+
+```bash
+tmeet auth use token-qtj
+```
 
 ---
 
@@ -1234,12 +1359,27 @@ tmeet tshoot feedback \
 
 ## Configuration
 
-Configuration files are stored in `~/.tmeet/` by default. You can override settings via environment variables:
+Configuration files are stored in `~/.tmeet/` by default; encrypted credentials are stored per account under the data directory. You can override paths via environment variables:
 
 | Environment Variable | Description | Default |
 |----------------------|-------------|---------|
-| `TMEET_CLI_CONFIG_DIR` | Configuration file directory | `~/.tmeet/` |
-| `TMEET_CLI_DATA_DIR` | Encrypted data directory | Platform-specific default path |
+| `TMEET_CLI_CONFIG_DIR` | Configuration file directory (plaintext `config.json`) | `~/.tmeet/` |
+| `TMEET_CLI_DATA_DIR` | Encrypted credential data directory (per-account subfolders) | Platform-specific default path |
+
+**Storage layout:**
+
+- `config.json` (plaintext, non-sensitive): the account registry `accounts` (alias → openId mapping) and the current `active_name`; the legacy `active_open_id` field is retained for backward compatibility.
+- Under the encrypted data directory, each account gets a folder named by its OpenId:
+
+  ```
+  <data-dir>/<openId>/
+      ├── master.key   # this account's own master key (DPAPI-protected on Windows; 0600 file on Linux/macOS)
+      └── data.enc      # AES-256-GCM encrypted credential JSON (AAD bound to openId)
+  ```
+
+  Each account's master key is isolated, so compromising one account's key does not affect others.
+
+**Automatic migration:** When upgrading from a single-account release, the first startup automatically migrates legacy-layout credentials (Windows registry / Linux files / macOS Keychain) into the new per-OpenId isolated layout and registers them — no re-login required. Migration is idempotent, never deletes legacy data, and never blocks startup.
 
 > **Note**: All time parameters use **ISO 8601** format, e.g. `2026-04-10T14:00+08:00`. Timestamp fields in responses are automatically converted to ISO 8601 format for display.
 
