@@ -43,9 +43,9 @@ func (s *Server) registerAuthTools() {
 	s.mcpSrv.AddTool(
 		mcp.NewTool("auth_login_url",
 			mcp.WithDescription(`Get the OAuth authorization URL for Tencent Meeting login.
-Returns authorize_url (open in browser) and code (pass to auth_login_poll). If the named account (or the active account when name is omitted) is already logged in, returns already_login=true and no URL.
-After getting the URL, ask the user to open it in their browser to authorize, then call auth_login_poll with the code (and the same name).`),
-			mcp.WithString("name", mcp.Description("optional account alias for multi-account login, e.g. token-qtj; pass the same value to auth_login_poll")),
+Returns authorize_url (open in browser) and code (pass to auth_login_poll). If the named account is already logged in, returns already_login=true and no URL.
+After getting the URL, ask the user to open it in their browser to authorize, then call auth_login_poll with the code and the same name.`),
+			mcp.WithString("name", mcp.Required(), mcp.Description("account alias for this login, e.g. token-qtj; pass the same value to auth_login_poll")),
 		),
 		s.handleAuthLoginURL,
 	)
@@ -57,7 +57,7 @@ After getting the URL, ask the user to open it in their browser to authorize, th
 Returns status: "pending" (user hasn't completed authorization yet, retry after a few seconds), "success" (login complete), or error.
 On pending, ask the user to complete authorization in browser and retry this tool. Pass the same name used in auth_login_url to label the account.`),
 			mcp.WithString("code", mcp.Required(), mcp.Description("authorization code from auth_login_url")),
-			mcp.WithString("name", mcp.Description("optional account alias for multi-account login, must match the name passed to auth_login_url")),
+			mcp.WithString("name", mcp.Required(), mcp.Description("account alias for this login, must match the name passed to auth_login_url")),
 		),
 		s.handleAuthLoginPoll,
 	)
@@ -85,27 +85,25 @@ func (s *Server) handleAuthLoginURL(ctx context.Context, req mcp.CallToolRequest
 	ctx = context.WithValue(ctx, log.CtxTraceIDKey, log.GenerateTraceID())
 	s.tmeet.CmdPath = "mcp/auth_login_url"
 
-	name := req.GetString("name", "")
+	name, err := req.RequireString("name")
+	if err != nil {
+		return errorResult(exception.InvalidArgsError.With("name is required: %v", err)), nil
+	}
 
 	lockPath := config.GetTokenLockPath()
 	var r authLoginURLResult
 	if err := filelock.WithLock(lockPath, func() error {
 		config.ResetCache()
 		// Multi-account: only treat as already-logged-in for the targeted account.
-		var existing *config.UserConfig
-		if name != "" {
-			existing, _ = config.GetAccountConfig(name)
-		} else {
-			existing, _ = config.GetUserConfig()
-		}
+		existing, _ := config.GetAccountConfig(name)
 		if existing != nil && existing.RefreshTokenExpires > time.Now().Unix() {
-			r = authLoginURLResult{AlreadyLogin: true, Message: "account already logged in, no need to authorize again"}
+			r = authLoginURLResult{AlreadyLogin: true, Message: "account " + name + " already logged in, no need to authorize again"}
 			return nil
 		}
 		tmeetAuth := auth.NewTmeetAuth(s.tmeet)
-		url, code, err := tmeetAuth.GeneralOauth2Address(ctx)
-		if err != nil {
-			return err
+		url, code, gerr := tmeetAuth.GeneralOauth2Address(ctx)
+		if gerr != nil {
+			return gerr
 		}
 		r = authLoginURLResult{AuthorizeURL: url, Code: code}
 		return nil
@@ -126,7 +124,10 @@ func (s *Server) handleAuthLoginPoll(ctx context.Context, req mcp.CallToolReques
 	if err != nil {
 		return errorResult(exception.InvalidArgsError.With("code is required: %v", err)), nil
 	}
-	name := req.GetString("name", "")
+	name, nerr := req.RequireString("name")
+	if nerr != nil {
+		return errorResult(exception.InvalidArgsError.With("name is required: %v", nerr)), nil
+	}
 
 	tmeetAuth := auth.NewTmeetAuth(s.tmeet)
 	tokenData, err := tmeetAuth.PollOauth2Once(ctx, code)
@@ -166,9 +167,6 @@ func (s *Server) handleAuthLoginPoll(ctx context.Context, req mcp.CallToolReques
 	s.tmeet.UserConfig = userConfig
 
 	accountName := name
-	if accountName == "" {
-		accountName = tokenData.OpenID
-	}
 	out, _ := emitJSON(authLoginPollResult{
 		Status:  "success",
 		Message: "login successful for account " + accountName + ", other tools are now available",

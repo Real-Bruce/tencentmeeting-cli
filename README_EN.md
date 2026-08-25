@@ -61,13 +61,14 @@ This automatically attempts to open the system default browser to the authorizat
 
 > To disable auto-opening the browser, use the `--no-browser` flag: `tmeet auth login --no-browser`
 
-To log in to multiple accounts, give each a `--name` alias (see [Multi-Account Management](#multi-account-management)):
+To log in to multiple accounts, give each a `--name` alias (**required**) (see [Multi-Account Management](#multi-account-management)):
 
 ```bash
 tmeet auth login --name token-qtj   # log in and name it token-qtj
 tmeet auth login --name token-qx    # log in another, named token-qx
-tmeet auth list                     # list all logged-in accounts
-tmeet auth use token-qtj            # switch the active account to token-qtj
+tmeet auth list                      # list all logged-in accounts
+tmeet auth use token-qtj             # switch the active account to token-qtj
+tmeet auth status --name token-qtj   # show a specific account's status
 ```
 
 ### 2. Create a Meeting
@@ -94,8 +95,7 @@ tmeet meeting list-ended \
 ### 4. Logout
 
 ```bash
-tmeet auth logout              # log out the active account
-tmeet auth logout token-qx     # log out a specific account by alias
+tmeet auth logout --name token-qx   # log out a specific account by alias
 ```
 
 ---
@@ -106,7 +106,7 @@ tmeet auth logout token-qx     # log out a specific account by alias
 
 ### Log in to multiple accounts
 
-Use `--name` to give an account an alias. Aliases allow letters, digits, underscores, and hyphens; when omitted, the server-returned OpenId is used as the alias.
+Use `--name` to give an account an alias. `--name` is **required**; aliases allow letters, digits, underscores, and hyphens.
 
 ```bash
 tmeet auth login --name token-qtj
@@ -273,7 +273,7 @@ tmeet [--format json|json-pretty] [--compact] [-V]
 
 #### `auth login`
 
-Login and complete OAuth2 authorization, saving credentials encrypted locally. Use `--name` to label the account for multi-account login.
+Login and complete OAuth2 authorization, saving credentials encrypted locally. `--name` is **required** and labels the account for multi-account login.
 
 ```bash
 tmeet auth login [options]
@@ -281,7 +281,7 @@ tmeet auth login [options]
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|:--------:|---------|-------------|
-| `--name` | string | — | — | Account alias (e.g. `token-qtj`) for multi-account login; defaults to the server-returned OpenId when omitted. Allows letters, digits, underscores, and hyphens |
+| `--name` | string | ✅ | — | Account alias (e.g. `token-qtj`) for multi-account login. Allows letters, digits, underscores, and hyphens |
 | `--no-browser` | bool | — | `false` | Disable auto-opening the browser. `false` (default) attempts to open the system default browser to the authorization URL automatically; `true` only prints the authorization URL and requires the user to open it manually. |
 
 After execution, the authorization URL is printed. The CLI polls for the authorization result automatically (timeout: 5 minutes) and saves the credentials encrypted locally; the newly logged-in account becomes the active account. If the `--name` account is already logged in with a valid refresh token, the CLI reports it and suggests `auth use` instead of re-authorizing.
@@ -289,9 +289,6 @@ After execution, the authorization URL is printed. The CLI polls for the authori
 **Examples:**
 
 ```bash
-# Single-account login
-tmeet auth login
-
 # Multi-account: log in with distinct aliases
 tmeet auth login --name token-qtj
 tmeet auth login --name token-qx
@@ -301,37 +298,37 @@ tmeet auth login --name token-qx
 
 #### `auth logout`
 
-Logout and clear local authentication credentials. Pass an alias to log out a specific account; omit it to log out the active account.
+Logout and clear the local credentials of the account specified by `--name` (**required**).
 
 ```bash
-tmeet auth logout [name]
+tmeet auth logout --name <name>
 ```
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|:--------:|---------|-------------|
-| `name` | string | — | active account | Alias of the account to log out; omit for the active account. After logging out the active account, the active pointer moves to the first remaining account |
+| `--name` | string | ✅ | — | Alias of the account to log out. If it was the active account, the active pointer moves to the first remaining account |
 
-**Examples:**
+**Example:**
 
 ```bash
-# Log out the active account
-tmeet auth logout
-
-# Log out a specific account (does not switch active unless it's the active one)
-tmeet auth logout token-qx
+tmeet auth logout --name token-qx
 ```
 
 ---
 
 #### `auth status`
 
-View the active account's login status, including alias, OpenId, and AccessToken / RefreshToken expiration status with remaining validity.
+View the login status of the account specified by `--name` (**required**): active marker, OpenId, and AccessToken / RefreshToken expiration with remaining validity.
 
 ```bash
-tmeet auth status
+tmeet auth status --name <name>
 ```
 
-> No parameters. Displays `Not logged in` when not authenticated; shows the account alias and credential validity when logged in.
+| Parameter | Type | Required | Default | Description |
+|-----------|------|:--------:|---------|-------------|
+| `--name` | string | ✅ | — | Alias of the account to query; reports when the account does not exist or is not logged in |
+
+> Reads only the locally stored credential state — no network request, no token refresh, no active-account switch.
 
 ---
 

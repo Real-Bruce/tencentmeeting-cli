@@ -366,12 +366,12 @@ tmeet mcp --transport streamable-http \
 
 | Tool | 说明 |
 |------|------|
-| `auth_login_url` | 获取授权 URL，返回 `{authorize_url, code}`。用户在浏览器打开授权。支持可选 `name` 参数为账号指定别名（多账号登录） |
-| `auth_login_poll` | 单次轮询登录结果。传入 `code`，返回 `pending`/`success`/`error`。支持可选 `name` 参数，需与 `auth_login_url` 一致 |
+| `auth_login_url` | 获取授权 URL，返回 `{authorize_url, code}`。用户在浏览器打开授权。**必填** `name` 参数为账号指定别名（多账号登录） |
+| `auth_login_poll` | 单次轮询登录结果。传入 `code`，返回 `pending`/`success`/`error`。**必填** `name` 参数，需与 `auth_login_url` 一致 |
 | `auth_list` | 列出全部已登录账号（别名/openId/是否活跃/refresh token 状态）。无需登录 |
 | `auth_use` | 按别名切换活跃账号，传入 `name`。切换后后续 tool 均作用于新活跃账号 |
 
-> 多账号：`auth_login_url` 与 `auth_login_poll` 都接受可选 `name`，需保持一致；不传时别名默认为服务端返回的 OpenId。
+> 多账号：`auth_login_url` 与 `auth_login_poll` 的 `name` 均为必填，且需保持一致，用于为本次登录的账号指定别名。
 > 远程部署场景下，可在服务器上先 `tmeet auth login --name <别名>` 完成登录，无需使用登录类 tool。它们主要用于模型引导用户完成登录。
 
 ### meeting — 会议管理（11 个）
@@ -448,9 +448,9 @@ tmeet mcp --transport streamable-http \
 
 模型通过两个 MCP tool 引导用户完成 OAuth：
 
-1. 调用 `auth_login_url`（可选传 `name`）→ 获取 `{authorize_url, code}`
+1. 调用 `auth_login_url` 传入 `name`（必填）→ 获取 `{authorize_url, code}`
 2. 引导用户在浏览器中打开 `authorize_url` 完成扫码授权
-3. 调用 `auth_login_poll` 传入 `code`（传相同 `name`）→ 返回 `pending`（用户尚未授权，重试）或 `success`（登录成功）
+3. 调用 `auth_login_poll` 传入 `code` 与相同的 `name` → 返回 `pending`（用户尚未授权，重试）或 `success`（登录成功）
 
 这种双 tool 方案避免了传统 CLI 登录的 5 分钟阻塞轮询，符合 MCP tool 快速返回的规范。
 

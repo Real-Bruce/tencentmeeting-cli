@@ -61,13 +61,14 @@ tmeet auth login
 
 > 如需禁用自动打开浏览器，可使用 `--no-browser` 参数：`tmeet auth login --no-browser`
 
-需要同时登录多个账号时，用 `--name` 为每个账号指定别名（详见[多账号管理](#多账号管理)）：
+需要同时登录多个账号时，用 `--name`（**必填**）为每个账号指定别名（详见[多账号管理](#多账号管理)）：
 
 ```bash
 tmeet auth login --name token-qtj   # 登录并命名为 token-qtj
 tmeet auth login --name token-qx    # 再登录一个，命名为 token-qx
-tmeet auth list                     # 查看所有已登录账号
-tmeet auth use token-qtj            # 切换活跃账号到 token-qtj
+tmeet auth list                      # 查看所有已登录账号
+tmeet auth use token-qtj             # 切换活跃账号到 token-qtj
+tmeet auth status --name token-qtj   # 查看指定账号状态
 ```
 
 ### 2. 创建会议
@@ -94,8 +95,7 @@ tmeet meeting list-ended \
 ### 4. 登出
 
 ```bash
-tmeet auth logout              # 登出当前活跃账号
-tmeet auth logout token-qx     # 登出指定别名的账号
+tmeet auth logout --name token-qx   # 登出指定别名的账号
 ```
 
 ---
@@ -106,7 +106,7 @@ tmeet auth logout token-qx     # 登出指定别名的账号
 
 ### 登录多个账号
 
-用 `--name` 给账号起别名；别名允许字母、数字、下划线、连字符，缺省时自动用服务端返回的 OpenId 作为别名。
+用 `--name` 给账号起别名；`--name` 为**必填**，别名允许字母、数字、下划线、连字符。
 
 ```bash
 tmeet auth login --name token-qtj
@@ -318,7 +318,7 @@ tmeet [--format json|json-pretty] [--compact] [-V]
 
 #### `auth login`
 
-登录并完成 OAuth2 授权，将凭证加密保存到本地。支持用 `--name` 为账号指定别名以实现多账号登录。
+登录并完成 OAuth2 授权，将凭证加密保存到本地。`--name` 为**必填**，用于为账号指定别名以实现多账号登录。
 
 ```bash
 tmeet auth login [选项]
@@ -326,7 +326,7 @@ tmeet auth login [选项]
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|:----:|--------|------|
-| `--name` | string | — | — | 账号别名（如 `token-qtj`），用于多账号区分；缺省时自动用服务端返回的 OpenId 作为别名。允许字母、数字、下划线、连字符 |
+| `--name` | string | ✅ | — | 账号别名（如 `token-qtj`），用于多账号区分。允许字母、数字、下划线、连字符 |
 | `--no-browser` | bool | — | `false` | 禁用自动打开浏览器。`false`（默认）会尝试自动打开系统默认浏览器跳转到授权 URL；`true` 则仅输出授权 URL，需用户手动在浏览器中打开 |
 
 执行后会输出授权 URL，CLI 自动轮询授权结果（超时 5 分钟），凭证加密保存到本地，新登录的账号自动设为活跃账号。若 `--name` 指定的账号已登录且 refresh token 仍有效，会提示已登录并引导用 `auth use` 切换，不再重复授权。
@@ -334,9 +334,6 @@ tmeet auth login [选项]
 **示例：**
 
 ```bash
-# 单账号登录
-tmeet auth login
-
 # 多账号：分别命名登录
 tmeet auth login --name token-qtj
 tmeet auth login --name token-qx
@@ -346,37 +343,37 @@ tmeet auth login --name token-qx
 
 #### `auth logout`
 
-登出并清除本地认证凭证。可指定别名登出某个账号，不指定则登出当前活跃账号。
+登出并清除指定账号的本地认证凭证。`--name` 为**必填**。
 
 ```bash
-tmeet auth logout [name]
+tmeet auth logout --name <name>
 ```
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|:----:|--------|------|
-| `name` | string | — | 活跃账号 | 要登出的账号别名；不传则登出当前活跃账号。登出活跃账号后，活跃指针自动切到剩余的第一个账号 |
+| `--name` | string | ✅ | — | 要登出的账号别名。登出的若是活跃账号，活跃指针自动切到剩余的第一个账号 |
 
 **示例：**
 
 ```bash
-# 登出当前活跃账号
-tmeet auth logout
-
-# 登出指定账号（不影响活跃账号，除非登出的正是活跃账号）
-tmeet auth logout token-qx
+tmeet auth logout --name token-qx
 ```
 
 ---
 
 #### `auth status`
 
-查看当前活跃账号的登录状态，包括别名、OpenId、AccessToken / RefreshToken 的过期状态和剩余有效时间。
+查看指定账号的登录状态，包括是否为活跃账号、OpenId、AccessToken / RefreshToken 的过期状态和剩余有效时间。`--name` 为**必填**。
 
 ```bash
-tmeet auth status
+tmeet auth status --name <name>
 ```
 
-> 无参数。未登录时提示 `Not logged in`，已登录时展示账号别名与凭证有效期信息。
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|:----:|--------|------|
+| `--name` | string | ✅ | — | 要查询的账号别名。账号不存在或未登录时提示 |
+
+> 仅读取本地存储的凭证状态，不发起网络请求，不会触发 token 刷新或切换活跃账号。
 
 ---
 

@@ -1,19 +1,12 @@
 package auth
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
 	"tmeet/internal"
 	"tmeet/internal/cmdutil"
 	"tmeet/internal/config"
-	"tmeet/internal/core/thttp"
-	"tmeet/internal/exception"
-	"tmeet/internal/log"
 	"tmeet/internal/output"
-	restProxy "tmeet/internal/proxy/rest-proxy"
 
 	"github.com/spf13/cobra"
 )
@@ -21,6 +14,7 @@ import (
 // StatusOptions holds the status query options.
 type StatusOptions struct {
 	tmeet *internal.Tmeet
+	Name  string // account alias to query; required
 }
 
 // newStatusCmd is the status query command.
@@ -28,60 +22,43 @@ func newStatusCmd(tmeet *internal.Tmeet) *cobra.Command {
 	opts := &StatusOptions{tmeet: tmeet}
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Show current authentication status",
-		Long:  "Display the current login status and credential information",
+		Short: "Show authentication status of an account",
+		Long:  "Display the login status and credential information of the account specified by --name.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return opts.Run(cmd, args)
 		},
 	}
 	cmdutil.InjectSkipPreCheckAnnotation(cmd)
 
+	cmd.Flags().StringVar(&opts.Name, "name", "", "account alias to query (required)")
+	_ = cmd.MarkFlagRequired("name")
+
 	return cmd
 }
 
 func (o *StatusOptions) Run(cmd *cobra.Command, args []string) error {
-	userConfig, err := config.GetUserConfig()
+	// Load the named account's stored credentials without touching the active account
+	// pointer or triggering a token refresh, so a status check never silently switches
+	// the active account.
+	userConfig, err := config.GetAccountConfig(o.Name)
 	if err != nil {
-		log.Errorf(cmd.Context(), "failed to read user config: %v", err)
-		return exception.GetUserConfigUnknownError.With("failed to read user config: %v", err)
+		return err
 	}
 	if userConfig == nil {
-		output.PrintInfof(cmd, "Not logged in. Please use 'tmeet auth login' to authenticate.")
+		output.PrintInfof(cmd, "Account %q is not logged in. Use 'tmeet auth login --name %s' to authenticate.", o.Name, o.Name)
 		return nil
 	}
 
-	now := time.Now().Unix()
-	userName := ""
-	// Show user info(if refresh token is not expired)
-	if userConfig.RefreshTokenExpires > 0 && now < userConfig.RefreshTokenExpires {
-		if userInfo, err := o.getUserInfo(cmd.Context()); err != nil {
-			log.Warnf(cmd.Context(), "get user info failed: %v", err)
-		} else if userInfo.UserName != "" {
-			userName = userInfo.UserName
-		}
-		// Show token expiry status.
-		lastestUserConfig, err1 := config.GetUserConfig()
-		if err1 != nil {
-			log.Errorf(cmd.Context(), "failed to read user config: %v", err1)
-			return exception.GetUserConfigUnknownError.With("failed to read user config: %v", err1)
-		}
-		if lastestUserConfig == nil {
-			output.PrintInfof(cmd, "  Session has expired. Please use 'tmeet auth login' to re-authenticate.")
-			return nil
-		}
-		userConfig = lastestUserConfig
+	activeMarker := ""
+	if config.GetActiveAccountName() == o.Name {
+		activeMarker = " (active)"
 	}
 
 	// Show login status.
-	output.PrintInfof(cmd, "Logged in")
-	if userConfig.Name != "" {
-		output.PrintInfof(cmd, "  Account:  %s", userConfig.Name)
-	}
+	output.PrintInfof(cmd, "Logged in%s", activeMarker)
+	output.PrintInfof(cmd, "  Account:  %s", o.Name)
 	output.PrintInfof(cmd, "  OpenId:  %s", userConfig.OpenId)
-	if userName != "" {
-		output.PrintInfof(cmd, "  UserName:  %s", userName)
-	}
-	now = time.Now().Unix()
+	now := time.Now().Unix()
 
 	// AccessToken expiry status.
 	if userConfig.Expires > 0 {
@@ -123,32 +100,4 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dh %dm", hours, minutes)
 	}
 	return fmt.Sprintf("%dm", minutes)
-}
-
-// UserInfoData is the user info data.
-type UserInfoData struct {
-	UserName string `json:"user_name,omitempty"`
-}
-
-// getUserInfo get user info.
-func (o *StatusOptions) getUserInfo(ctx context.Context) (*UserInfoData, error) {
-	req := &thttp.Request{
-		ApiURI: "/v1/cli/get-user-info",
-		Body: map[string]interface{}{
-			"operator_id":      o.tmeet.UserConfig.OpenId,
-			"operator_id_type": 2, // openId
-		},
-	}
-	rsp, err := restProxy.RequestProxy(ctx, http.MethodPost, o.tmeet, req)
-	if err != nil {
-		log.Errorf(ctx, "request api /v1/cli/get-user-info failed, err: %v", err)
-		return nil, err
-	}
-	data := &UserInfoData{}
-	err = json.Unmarshal([]byte(rsp.Data), data)
-	if err != nil {
-		log.Errorf(ctx, "unmarshal api /v1/cli/get-user-info failed, err: %v", err)
-		return nil, err
-	}
-	return data, nil
 }

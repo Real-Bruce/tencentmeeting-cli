@@ -15,30 +15,30 @@ import (
 // LogoutOptions holds the logout options.
 type LogoutOptions struct {
 	tmeet *internal.Tmeet
+	Name  string // account alias to log out; required
 }
 
 // newLogoutCmd is the logout command.
 func newLogoutCmd(tmeet *internal.Tmeet) *cobra.Command {
 	opts := &LogoutOptions{tmeet: tmeet}
 	cmd := &cobra.Command{
-		Use:   "logout [name]",
+		Use:   "logout",
 		Short: "logout from tmeet",
-		Long:  "Logout and clear local authentication credentials. With an optional account name, only that account is removed; otherwise the active account is logged out.",
-		Args:  cobra.MaximumNArgs(1),
+		Long:  "Logout and clear the local credentials of the account specified by --name.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return opts.Run(cmd, args)
 		},
 	}
+
+	cmd.Flags().StringVar(&opts.Name, "name", "", "account alias to log out (required)")
+	_ = cmd.MarkFlagRequired("name")
 
 	return cmd
 }
 
 func (o *LogoutOptions) Run(cmd *cobra.Command, args []string) error {
 	err := retry.Do(cmd.Context(), func(ctx context.Context) error {
-		if len(args) == 1 {
-			return config.ClearAccount(args[0])
-		}
-		return config.ClearUserConfig()
+		return config.ClearAccount(o.Name)
 	}, retry.DefaultOptions)
 	if err != nil {
 		log.Errorf(cmd.Context(), "Logout failed: %v", err)
