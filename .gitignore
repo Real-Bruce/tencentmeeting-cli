@@ -5,6 +5,9 @@ tmeet
 *.log
 /dist
 
+.zed
+.vscode
+
 *.enc
 master.key
 *.out
