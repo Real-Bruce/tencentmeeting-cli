@@ -96,6 +96,7 @@ tmeet meeting list-ended \
 
 ```bash
 tmeet auth logout --name token-qx   # log out a specific account by alias
+tmeet auth logout --all             # log out all accounts
 ```
 
 ---
@@ -343,20 +344,22 @@ tmeet auth login --name token-qx
 
 #### `auth logout`
 
-Logout and clear the local credentials of the account specified by `--name` (**required**).
+Logout and clear local credentials. Either `--name` or `--all` is required: `--name` logs out a single account, `--all` logs out every registered account.
 
 ```bash
-tmeet auth logout --name <name>
+tmeet auth logout --name <name> | --all
 ```
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|:--------:|---------|-------------|
-| `--name` | string | ✅ | — | Alias of the account to log out. If it was the active account, the active pointer moves to the first remaining account |
+| `--name` | string | one of | — | Alias of the account to log out. If it was the active account, the active pointer moves to the first remaining account |
+| `--all` | bool | one of | `false` | Log out every registered account, clearing local credentials and the account registry |
 
 **Example:**
 
 ```bash
-tmeet auth logout --name token-qx
+tmeet auth logout --name token-qx   # log out a specific account
+tmeet auth logout --all             # log out all accounts
 ```
 
 ---

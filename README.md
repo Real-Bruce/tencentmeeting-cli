@@ -96,6 +96,7 @@ tmeet meeting list-ended \
 
 ```bash
 tmeet auth logout --name token-qx   # 登出指定别名的账号
+tmeet auth logout --all             # 登出全部已登录账号
 ```
 
 ---
@@ -343,20 +344,22 @@ tmeet auth login --name token-qx
 
 #### `auth logout`
 
-登出并清除指定账号的本地认证凭证。`--name` 为**必填**。
+登出并清除本地认证凭证。`--name` 与 `--all` 二选一：指定 `--name` 登出单个账号，指定 `--all` 登出全部已登录账号。
 
 ```bash
-tmeet auth logout --name <name>
+tmeet auth logout --name <name> | --all
 ```
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|:----:|--------|------|
-| `--name` | string | ✅ | — | 要登出的账号别名。登出的若是活跃账号，活跃指针自动切到剩余的第一个账号 |
+| `--name` | string | 二选一 | — | 要登出的账号别名。登出的若是活跃账号，活跃指针自动切到剩余的第一个账号 |
+| `--all` | bool | 二选一 | `false` | 登出全部已登录账号，清空本地凭证与账号注册表 |
 
 **示例：**
 
 ```bash
-tmeet auth logout --name token-qx
+tmeet auth logout --name token-qx   # 登出指定账号
+tmeet auth logout --all             # 登出全部账号
 ```
 
 ---

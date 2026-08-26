@@ -349,6 +349,41 @@ func ClearAccount(name string) error {
 	return nil
 }
 
+// ClearAllAccounts clears the configuration for every registered account.
+//
+// Removes each account's encrypted entry and wipes the registry (config.json).
+// Returns nil when no accounts are registered.
+func ClearAllAccounts() (retErr error) {
+	meta, err := loadMeta()
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			ResetCache()
+			return nil
+		}
+		return exception.LogoutFailedError.With("failed to load app metadata: %v", err)
+	}
+	if meta == nil {
+		ResetCache()
+		return nil
+	}
+
+	defer func() {
+		ResetCache()
+	}()
+
+	// Best-effort removal of every account's encrypted entry; tolerate already-missing.
+	for _, entry := range meta.Accounts {
+		if err := getKeychain().Remove(keychain.ServiceName, entry.OpenId); err != nil && !errors.Is(err, keychain.ErrNotFound) {
+			return exception.LogoutFailedError.With("failed to delete encrypted config: %v", err)
+		}
+	}
+
+	if err := clearMeta(); err != nil {
+		return exception.LogoutFailedError.With("failed to clear app metadata: %v", err)
+	}
+	return nil
+}
+
 // clearAccountEntry removes the named account from meta.Accounts in place.
 // It does NOT touch the encrypted entry or persist meta; callers handle those.
 func clearAccountEntry(meta *AppMeta, name string) error {

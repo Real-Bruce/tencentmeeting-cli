@@ -735,6 +735,36 @@ func TestClearAccountReassignsActive(t *testing.T) {
 	}
 }
 
+func TestClearAllAccounts(t *testing.T) {
+	_, cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	cfgA := &UserConfig{Name: "token-qtj", OpenId: "open_qtj"}
+	cfgB := &UserConfig{Name: "token-qx", OpenId: "open_qx"}
+	_ = SaveUserConfig(cfgA)
+	_ = SaveUserConfig(cfgB) // active = B
+
+	// 登出全部：注册表清空，无活跃账号
+	if err := ClearAllAccounts(); err != nil {
+		t.Fatalf("ClearAllAccounts: %v", err)
+	}
+	if accounts, _ := ListAccounts(); len(accounts) != 0 {
+		t.Fatalf("after clearing all, want no accounts, got %+v", accounts)
+	}
+	if name := GetActiveAccountName(); name != "" {
+		t.Errorf("active should be empty after clearing all, got %q", name)
+	}
+	ResetCache()
+	if got, _ := GetUserConfig(); got != nil {
+		t.Fatalf("active config should be nil after clearing all, got %+v", got)
+	}
+
+	// 无账号时再调用应幂等、不报错
+	if err := ClearAllAccounts(); err != nil {
+		t.Fatalf("ClearAllAccounts idempotent: %v", err)
+	}
+}
+
 func TestGetAccountConfigByName(t *testing.T) {
 	_, cleanup := setupTestEnv(t)
 	defer cleanup()
