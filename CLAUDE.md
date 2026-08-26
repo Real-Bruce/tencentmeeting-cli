@@ -61,6 +61,7 @@ go env -w GOPROXY=https://goproxy.cn,direct   # 国内开发
 - 注释用**中文**，遵循 Go doc 规范（`//` 行注释，导出项必注）。
 - 错误统一用 `internal/exception`（`TmeetError{Code, Message}`，不可变，`With(...)` 返回新实例）；新错误必须带**可操作恢复建议**。
 - 每次改代码后**必须提交 git**；提交流程/分支/敏感信息见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
+- **commit message 用英文**：subject + body 均用英文描述更改（遵循 Conventional Commits，如 `feat:`/`fix:`/`docs:`/`chore:`），保留 `Co-Authored-By` trailer；代码注释仍用中文。
 - 改 `internal/` 核心前必读 [`docs/agents/invariants.md`](docs/agents/invariants.md)；新增子命令按 [`docs/agents/new-command.md`](docs/agents/new-command.md) 9 步清单。
 
 ## 深度文档索引
