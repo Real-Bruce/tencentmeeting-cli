@@ -57,18 +57,18 @@ npx skills add TencentCloud/tencentmeeting-cli -y -g
 tmeet auth login --name token-qtj
 ```
 
-`--name` 为**必填**，用于为账号指定别名。执行后会自动尝试打开系统默认浏览器跳转到授权 URL；若无默认浏览器，则输出授权 URL，手动在浏览器中打开完成扫码授权。CLI 自动轮询结果（超时 5 分钟），凭证加密保存到本地。
+`--name` 为**必填**，用于为账号指定别名，可一次传入多个以批量登录。单账号登录时会自动打开系统默认浏览器跳转到授权 URL；多账号登录时仅打印各账号的授权链接（避免一次弹出一堆标签页）。CLI 自动并发轮询每个授权结果（超时 5 分钟），凭证加密保存到本地。
 
 > 如需禁用自动打开浏览器，可使用 `--no-browser` 参数：`tmeet auth login --name token-qtj --no-browser`
 
-登录多个账号时，用不同的 `--name` 别名区分（`--name` 始终必填，即使只登录一个账号；详见[多账号管理](#多账号管理)）：
+登录多个账号时，用不同的 `--name` 别名区分（`--name` 始终必填，即使只登录一个账号；详见[多账号管理](#多账号管理)）。既可逐个登录，也可一次性批量登录：
 
 ```bash
-tmeet auth login --name token-qtj   # 登录并命名为 token-qtj
-tmeet auth login --name token-qx    # 再登录一个，命名为 token-qx
-tmeet auth list                      # 查看所有已登录账号
-tmeet auth use token-qtj             # 切换活跃账号到 token-qtj
-tmeet auth status --name token-qtj   # 查看指定账号状态
+tmeet auth login --name token-qtj                    # 单账号：仅生成一条授权链接
+tmeet auth login --name token-qtj token-qx token-dt  # 多账号：一次生成三条授权链接
+tmeet auth list                                       # 查看所有已登录账号
+tmeet auth use token-qtj                              # 切换活跃账号到 token-qtj
+tmeet auth status --name token-qtj                    # 查看指定账号状态
 ```
 
 ### 2. 创建会议
@@ -107,16 +107,19 @@ tmeet auth logout --all             # 登出全部已登录账号
 
 ### 登录多个账号
 
-用 `--name` 给账号起别名；`--name` 为**必填**，别名允许字母、数字、下划线、连字符。
+用 `--name` 给账号起别名；`--name` 为**必填**，别名允许字母、数字、下划线、连字符。可逐个登录，也可在一条命令里传入多个别名一次性批量登录（空格、逗号分隔或重复 `--name` 均可）：
 
 ```bash
-tmeet auth login --name token-qtj
+tmeet auth login --name token-qtj                     # 逐个登录
 tmeet auth login --name token-qx
 tmeet auth login --name token-dt
+
+tmeet auth login --name token-qtj token-qx token-dt  # 一次性批量登录，生成三条授权链接
 ```
 
-- 新登录的账号自动成为活跃账号。
-- 若 `--name` 指定的别名已存在且其 refresh token 仍有效，会提示已登录、引导用 `auth use` 切换，不再重复发起授权。
+- 批量登录时，每个别名各生成一条授权链接，CLI 并发轮询各账号的授权结果；多账号场景不自动打开浏览器，仅打印链接。
+- 新登录的账号自动成为活跃账号（批量登录后最后一个成功登录的账号为活跃账号）。
+- 若 `--name` 指定的别名已存在且其 refresh token 仍有效，会提示已登录并跳过，继续处理其余别名，不再重复发起授权。
 - 同名绑定的若是不同账号（OpenId 不同）会报别名冲突，请换一个别名。
 - 重新登录同一账号（OpenId 相同）可更新别名或刷新凭证。
 
@@ -319,7 +322,7 @@ tmeet [--format json|json-pretty] [--compact] [-V]
 
 #### `auth login`
 
-登录并完成 OAuth2 授权，将凭证加密保存到本地。`--name` 为**必填**，用于为账号指定别名以实现多账号登录。
+登录并完成 OAuth2 授权，将凭证加密保存到本地。`--name` 为**必填**，用于为账号指定别名以实现多账号登录；可一次传入多个别名批量登录。
 
 ```bash
 tmeet auth login [选项]
@@ -327,17 +330,23 @@ tmeet auth login [选项]
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|:----:|--------|------|
-| `--name` | string | ✅ | — | 账号别名（如 `token-qtj`），用于多账号区分。允许字母、数字、下划线、连字符 |
-| `--no-browser` | bool | — | `false` | 禁用自动打开浏览器。`false`（默认）会尝试自动打开系统默认浏览器跳转到授权 URL；`true` 则仅输出授权 URL，需用户手动在浏览器中打开 |
+| `--name` | string[] | ✅ | — | 账号别名（如 `token-qtj`），用于多账号区分。可传一个或多个，空格分隔（`--name a b c`）、逗号分隔（`--name a,b,c`）或重复（`--name a --name b`）。允许字母、数字、下划线、连字符，最长 64 字符 |
+| `--no-browser` | bool | — | `false` | 禁用自动打开浏览器。单账号时 `false`（默认）会尝试自动打开系统默认浏览器跳转到授权 URL；多账号或 `true` 时仅输出授权 URL，需用户手动在浏览器中打开 |
 
-执行后会输出授权 URL，CLI 自动轮询授权结果（超时 5 分钟），凭证加密保存到本地，新登录的账号自动设为活跃账号。若 `--name` 指定的账号已登录且 refresh token 仍有效，会提示已登录并引导用 `auth use` 切换，不再重复授权。
+执行后会输出每个账号的授权 URL（格式 `[别名] authorize url <链接>`），CLI 并发轮询各授权结果（超时 5 分钟），凭证加密保存到本地，新登录的账号自动设为活跃账号（批量登录后最后一个成功登录的账号为活跃账号）。若某 `--name` 指定的账号已登录且 refresh token 仍有效，会提示已登录并跳过，继续处理其余别名，不再重复授权。
 
 **示例：**
 
 ```bash
-# 多账号：分别命名登录
+# 单账号登录
 tmeet auth login --name token-qtj
-tmeet auth login --name token-qx
+
+# 多账号：一次性批量登录，生成多条授权链接
+tmeet auth login --name token-qtj token-qx token-dt
+
+# 等价写法
+tmeet auth login --name token-qtj,token-qx,token-dt
+tmeet auth login --name token-qtj --name token-qx --name token-dt
 ```
 
 ---

@@ -57,18 +57,18 @@ npx skills add TencentCloud/tencentmeeting-cli -y -g
 tmeet auth login --name token-qtj
 ```
 
-`--name` is **required** and labels the account. This automatically attempts to open the system default browser to the authorization URL. If no default browser is available, it prints the URL for you to open manually. The CLI polls for the result automatically (5-minute timeout) and saves the credentials encrypted locally.
+`--name` is **required** and labels the account; pass several at once to log in to multiple accounts in one go. For a single account it automatically opens the system default browser to the authorization URL; for multiple accounts it only prints each account's authorization URL (to avoid spawning a burst of browser tabs). The CLI polls every authorization result concurrently (5-minute timeout) and saves the credentials encrypted locally.
 
 > To disable auto-opening the browser, use the `--no-browser` flag: `tmeet auth login --name token-qtj --no-browser`
 
-To log in to multiple accounts, give each a distinct `--name` alias (`--name` is always required, even for a single account; see [Multi-Account Management](#multi-account-management)):
+To log in to multiple accounts, give each a distinct `--name` alias (`--name` is always required, even for a single account; see [Multi-Account Management](#multi-account-management)). You can log in one at a time or all at once:
 
 ```bash
-tmeet auth login --name token-qtj   # log in and name it token-qtj
-tmeet auth login --name token-qx    # log in another, named token-qx
-tmeet auth list                      # list all logged-in accounts
-tmeet auth use token-qtj             # switch the active account to token-qtj
-tmeet auth status --name token-qtj   # show a specific account's status
+tmeet auth login --name token-qtj                    # single account: only one authorize URL
+tmeet auth login --name token-qtj token-qx token-dt  # multiple accounts: three authorize URLs at once
+tmeet auth list                                       # list all logged-in accounts
+tmeet auth use token-qtj                              # switch the active account to token-qtj
+tmeet auth status --name token-qtj                    # show a specific account's status
 ```
 
 ### 2. Create a Meeting
@@ -107,16 +107,19 @@ tmeet auth logout --all             # log out all accounts
 
 ### Log in to multiple accounts
 
-Use `--name` to give an account an alias. `--name` is **required**; aliases allow letters, digits, underscores, and hyphens.
+Use `--name` to give an account an alias. `--name` is **required**; aliases allow letters, digits, underscores, and hyphens. You can log in one at a time, or pass several aliases in a single command to batch-log-in (space-separated, comma-separated, or repeated `--name` all work):
 
 ```bash
-tmeet auth login --name token-qtj
+tmeet auth login --name token-qtj                     # log in one at a time
 tmeet auth login --name token-qx
 tmeet auth login --name token-dt
+
+tmeet auth login --name token-qtj token-qx token-dt  # batch login, generates three authorize URLs
 ```
 
-- A newly logged-in account becomes the active account.
-- If the `--name` alias already exists and its refresh token is still valid, the CLI reports it as logged in and suggests `auth use` to switch, without re-authorizing.
+- For batch login, each alias gets its own authorize URL and the CLI polls every account's result concurrently; the browser is not auto-opened for multiple accounts, only the URLs are printed.
+- A newly logged-in account becomes the active account (after a batch login, the last successfully logged-in account is the active one).
+- If the `--name` alias already exists and its refresh token is still valid, the CLI reports it as logged in, skips it, and continues with the remaining aliases, without re-authorizing.
 - Reusing the same alias for a different account (different OpenId) is rejected as a conflict — pick another alias.
 - Re-logging in the same account (same OpenId) updates its alias or refreshes its credentials.
 
@@ -319,7 +322,7 @@ tmeet [--format json|json-pretty] [--compact] [-V]
 
 #### `auth login`
 
-Login and complete OAuth2 authorization, saving credentials encrypted locally. `--name` is **required** and labels the account for multi-account login.
+Login and complete OAuth2 authorization, saving credentials encrypted locally. `--name` is **required** and labels the account for multi-account login; pass several aliases at once to batch-log-in.
 
 ```bash
 tmeet auth login [options]
@@ -327,17 +330,23 @@ tmeet auth login [options]
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|:--------:|---------|-------------|
-| `--name` | string | ✅ | — | Account alias (e.g. `token-qtj`) for multi-account login. Allows letters, digits, underscores, and hyphens |
-| `--no-browser` | bool | — | `false` | Disable auto-opening the browser. `false` (default) attempts to open the system default browser to the authorization URL automatically; `true` only prints the authorization URL and requires the user to open it manually. |
+| `--name` | string[] | ✅ | — | Account alias (e.g. `token-qtj`) for multi-account login. One or more aliases, space-separated (`--name a b c`), comma-separated (`--name a,b,c`), or repeated (`--name a --name b`). Allows letters, digits, underscores, and hyphens; max 64 chars |
+| `--no-browser` | bool | — | `false` | Disable auto-opening the browser. For a single account, `false` (default) attempts to open the system default browser to the authorization URL automatically; for multiple accounts or `true`, only the authorization URLs are printed and the user must open them manually |
 
-After execution, the authorization URL is printed. The CLI polls for the authorization result automatically (timeout: 5 minutes) and saves the credentials encrypted locally; the newly logged-in account becomes the active account. If the `--name` account is already logged in with a valid refresh token, the CLI reports it and suggests `auth use` instead of re-authorizing.
+After execution, each account's authorization URL is printed (format `[alias] authorize url <url>`). The CLI polls each authorization result concurrently (timeout: 5 minutes) and saves the credentials encrypted locally; the newly logged-in account becomes the active account (after a batch login, the last successfully logged-in account is the active one). If a `--name` account is already logged in with a valid refresh token, the CLI reports it, skips it, and continues with the remaining aliases, instead of re-authorizing.
 
 **Examples:**
 
 ```bash
-# Multi-account: log in with distinct aliases
+# Single account
 tmeet auth login --name token-qtj
-tmeet auth login --name token-qx
+
+# Multiple accounts: batch login, generates several authorize URLs
+tmeet auth login --name token-qtj token-qx token-dt
+
+# Equivalent forms
+tmeet auth login --name token-qtj,token-qx,token-dt
+tmeet auth login --name token-qtj --name token-qx --name token-dt
 ```
 
 ---
