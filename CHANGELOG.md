@@ -2,6 +2,39 @@
 
 All notable changes to tmeet will be documented in this file, following the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) convention.
 
+## [v1.0.16] - 2026-08-26
+
+### Added
+
+- **Multi-account login with OpenId-isolated per-account credential storage** (`internal/tmeet.go`, `internal/config/`): Credentials are stored per-account under `<dataDir>/<openId>/{master.key,data.enc}` with an independent master key — Windows retains DPAPI, Linux/macOS use 0600 files, and AES-256-GCM with AAD bound to the openId prevents a cross-account `.enc` swap. The config holds an `{active_name, accounts[], active_open_id(legacy)}` registry; `NewTmeet` runs an idempotent, non-blocking legacy→per-account migration on startup, with `active_open_id` fallback so existing single-account installs need no re-login.
+- **New config / account APIs** (`internal/config/`): `ListAccounts` / `SwitchAccount` / `ClearAccount` / `GetAccountConfig` back the registry of encrypted per-account credentials.
+- **New error codes `AccountNotFoundError` (1008) and `AccountNameConflictError` (1009)** (`internal/exception/`): Alias uniqueness is keyed by openId — re-login of the same openId updates alias/sdk in place, while an alias collision against a different openId is rejected with an actionable recovery hint.
+- **`auth logout --all` flag** (`cmd/auth/logout.go`, `ClearAllAccounts`): Deletes every encrypted credential entry and empties `config.json`; it is an idempotent no-op when no accounts exist, and `--all` is mutually exclusive with `--name`.
+- **Batch multi-account `auth login --name`** (`cmd/auth/login.go`): `--name` becomes a StringSlice (space/comma-separated or repeated) that generates authorize URLs in batch. The flow is split into four stages — skip already-logged-in → concurrent URL generation → concurrent polling → serial save (since the `config.json` read-modify-write must be serial). Multi-account mode prints URLs only (no auto-browser); single-account mode still auto-opens the browser.
+- **`CLAUDE.md` project memory entry point**: A self-contained Chinese quick-reference (project overview, multi-account isolation model, key invariants, command patterns, build/test, MCP cheat sheet) that points to `AGENTS.md` / `docs/agents/` for depth.
+
+### Changed
+
+- **`--name` is now required for `auth login` / `auth logout` / `auth status` and the MCP `auth_login_url` / `auth_login_poll` / `auth_use` tools** (`cmd/auth/*.go`, `internal/mcpserver/`): `auth logout` moved from an optional positional arg to a required `--name` flag; `auth status` no longer calls `getUserInfo`, removing a network call and avoiding silently switching the active account.
+- **Docs synced for multi-account** (`README.md`, `README_EN.md`, `docs/MCP.md`): Required `--name`, `--transport` default `stdio`, `--addr` default `:8347`, tool count corrected 30→32, `--endpoint` documented, and README_EN's "As an MCP Server" section translated.
+- **Commit-message convention: English required** (`CLAUDE.md`): Subject and body must be in English (Conventional Commits, `Co-Authored-By` trailer retained); code comments remain Chinese.
+
+## [v1.0.15] - 2026-08-21
+
+### Added
+
+- **New `tmeet mcp` subcommand — Model Context Protocol server** (`cmd/mcp.go`, `internal/mcpserver/`): Exposes tmeet to AI agents (Cursor / Claude Desktop / etc.) over stdio by default. A singleton tmeet client and a generic `wrap()` helper unify traceID injection, `Tmeet-Cli-Name` / CmdPath setting, login preCheck, and error mapping. A shared `Result{Data, TraceId, Message}` type (`internal/result/result.go`) decouples business logic from cobra / stdout so the CLI and MCP share one code path.
+- **32 MCP tools registered across all domains** (`internal/mcpserver/tools_*.go`): meeting (11), record (9), report (2), contact (3), control (2), tshoot (1: `feedback`; `tshoot log` is CLI-only since it needs local filesystem access). All domain business logic was refactored into pure functions in `internal/<domain>/` invoked identically by cobra and MCP; create/update now use pointer types (`*int` / `*bool` / `*string`) so "flag provided" vs "default" is distinguishable across both frontends — cobra maps `Flags().Changed()` → non-nil pointer, MCP `BindArguments` maps JSON key-absence → nil.
+- **Non-blocking `auth_login_url` + `auth_login_poll` dual MCP tools** (`internal/mcpserver/`, `TmeetAuth.PollOauth2Once`): The OAuth login is split into two tools — `auth_login_url` returns the authorize URL immediately (checking logged-in state first), and `auth_login_poll` is a single-shot poll returning `pending` / `success` / error. The legacy `PollingOauth2Result` blocks for 5 min and is unsuitable for MCP.
+- **Remote MCP transports** (`cmd/mcp.go`, `internal/mcpserver/server.go`): The `--transport` flag selects `stdio` (default) / `streamable-http` (MCP 2025-03-26 spec) / `sse` (legacy). HTTP flags: `--addr` (default `:8347`), `--endpoint` (default `/mcp`), `--base-url` (SSE behind a reverse proxy), `--api-key` (Bearer auth), `--tls-cert` / `--tls-key`.
+- **Standalone deployment guide `docs/MCP.md` and an "As an MCP Server" section in `README.md`**: Covers the three transports, Linux/systemd deployment, Nginx reverse proxy, AI-client configs, the 32-tool table, OAuth flow, curl testing, and an FAQ.
+
+### Changed
+
+- **All domain business logic refactored into pure functions shared by cobra and MCP** (`internal/<domain>/`, `internal/result/`): Pure-function output helpers added — `StripTotalCountIfZero`, `StripMetaFilterField`, `ApplyContactSearchLogic`, and a cobra-free `cmdutil.ClampPageSize`.
+- **Default MCP HTTP port finalized to `:8347`** (`cmd/mcp.go`, `internal/mcpserver/server.go`, `docs/MCP.md`).
+- **Docs reorganized**: architecture / config / conventions / debugging / invariants / new-command / testing / troubleshooting / release moved under `docs/agents/`; `AGENTS.md` rewritten as the single source of truth; `.gitignore` rules added.
+
 ## [v1.0.14] - 2026-07-28
 
 ### Added
