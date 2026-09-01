@@ -211,4 +211,19 @@ invitees + invitees_type (replace/add/remove) must be provided together.`),
 			return meeting.InviteesReplace(ctx, tmeet, p)
 		}),
 	)
+
+	// --- meeting_conflict ---
+	s.mcpSrv.AddTool(
+		mcp.NewTool("meeting_conflict",
+			mcp.WithDescription(`Check if a time range conflicts with existing pending/in-progress meetings of the authorized user.
+Times are ISO 8601 with timezone, e.g. "2026-08-31T12:30+08:00". end must be after start.
+Returns meet_conflict (bool), total_count and conflict_meetings list (the overlapping meetings, show meeting_code to users).
+Only pending/in-progress meetings are checked; ended meetings are not included.`),
+			mcp.WithString("start", mcp.Required(), mcp.Description("time range start (ISO 8601 with timezone, e.g. 2026-08-31T12:30+08:00)")),
+			mcp.WithString("end", mcp.Required(), mcp.Description("time range end (ISO 8601 with timezone, must be after start)")),
+		),
+		wrap(s, "meeting_conflict", false, func(ctx context.Context, tmeet *internal.Tmeet, p meeting.ConflictParams) (*result.Result, error) {
+			return meeting.Conflict(ctx, tmeet, p)
+		}),
+	)
 }

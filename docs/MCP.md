@@ -361,7 +361,7 @@ tmeet mcp --transport streamable-http \
 
 ## 可用 Tool 列表
 
-共 32 个 tool，覆盖腾讯会议全部能力。
+共 33 个 tool，覆盖腾讯会议全部能力。
 
 ### auth — OAuth 登录与多账号（4 个）
 
@@ -375,7 +375,7 @@ tmeet mcp --transport streamable-http \
 > 多账号：`auth_login_url` 与 `auth_login_poll` 的 `name` 均为必填，且需保持一致，用于为本次登录的账号指定别名。
 > 远程部署场景下，可在服务器上先 `tmeet auth login --name <别名>` 完成登录，无需使用登录类 tool。它们主要用于模型引导用户完成登录。
 
-### meeting — 会议管理（11 个）
+### meeting — 会议管理（12 个）
 
 | Tool | 说明 |
 |------|------|
@@ -390,6 +390,7 @@ tmeet mcp --transport streamable-http \
 | `meeting_invitees_add` | 添加会议受邀者 |
 | `meeting_invitees_remove` | 移除会议受邀者 |
 | `meeting_invitees_replace` | 替换全部受邀者 |
+| `meeting_conflict` | 检测某时间段是否与已有待开始/进行中会议冲突，返回 `meet_conflict` 布尔值与冲突会议列表 |
 
 ### record — 录制管理（9 个）
 

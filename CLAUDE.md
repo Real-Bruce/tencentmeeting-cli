@@ -53,7 +53,7 @@ go env -w GOPROXY=https://goproxy.cn,direct   # 国内开发
 `tmeet mcp`（`cmd/mcp.go` + `internal/mcpserver/`），本身 skipPreCheck：
 
 - **传输**：`stdio`（默认）/ `streamable-http`（MCP 2025-03-26，默认 `:8347`，端点 `/mcp`）/ `sse`。HTTP 模式支持 `--api-key`（Bearer）+ `--tls-cert/--tls-key`。首个 `initialize` 返回 `Mcp-Session-Id` 头需回传。
-- **工具**：32 个（auth 4 / meeting 11 / record 9 / report 2 / contact 3 / control 2 / tshoot 1），复用 `internal/<domain>` 同一套逻辑。`tshoot log` 仅 CLI（需文件系统访问）。详见 [`docs/MCP.md`](docs/MCP.md)。
+- **工具**：33 个（auth 4 / meeting 12 / record 9 / report 2 / contact 3 / control 2 / tshoot 1），复用 `internal/<domain>` 同一套逻辑。`tshoot log` 仅 CLI（需文件系统访问）。详见 [`docs/MCP.md`](docs/MCP.md)。
 - **多实例隔离**（每用户/部门）：port(`--addr`) + `TMEET_CLI_CONFIG_DIR` + `TMEET_CLI_DATA_DIR` + 随机 api-key + systemd `%i`。
 
 ## 约定与工作流
