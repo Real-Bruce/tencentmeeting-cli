@@ -375,6 +375,83 @@ tmeet mcp --transport streamable-http \
 > 多账号：`auth_login_url` 与 `auth_login_poll` 的 `name` 均为必填，且需保持一致，用于为本次登录的账号指定别名。
 > 远程部署场景下，可在服务器上先 `tmeet auth login --name <别名>` 完成登录，无需使用登录类 tool。它们主要用于模型引导用户完成登录。
 
+#### auth_login_url
+
+获取 OAuth 授权 URL，用户在浏览器打开完成授权。若该别名账号已登录（refresh token 未过期），直接返回 `already_login=true`。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| name | string | 是 | 账号别名，如 `token-qtj`；需在 `auth_login_poll` 传入相同值 |
+
+**出参**
+
+自定义结构（非 API 透传）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| authorize_url | string | OAuth 授权 URL，引导用户在浏览器打开 |
+| code | string | 授权码，传给 `auth_login_poll` |
+| already_login | bool | 仅在已登录时出现，为 `true` 表示无需再次授权 |
+| message | string | 提示信息（如 `account <name> already logged in, no need to authorize again`） |
+
+#### auth_login_poll
+
+单次轮询登录结果。返回 `pending`（用户尚未完成授权，数秒后重试）或 `success`（登录成功）。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| code | string | 是 | 来自 `auth_login_url` 的授权码 |
+| name | string | 是 | 账号别名，必须与 `auth_login_url` 一致 |
+
+**出参**
+
+自定义结构（非 API 透传）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| status | string | `pending` / `success` / `error` |
+| message | string | 提示信息（如 `login successful for account <name>, other tools are now available`） |
+
+#### auth_list
+
+列出全部已登录账号。无需登录即可调用。
+
+**入参**
+
+无。
+
+**出参**
+
+账号数组，每项字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| name | string | 账号别名 |
+| open_id | string | 账号 openId |
+| active | bool | 是否为当前活跃账号 |
+| token_state | string | refresh token 状态，如 `refresh-token valid (remaining 1h2m3s)` 或 `refresh-token expired` |
+
+#### auth_use
+
+按别名切换活跃账号，切换后后续 tool 均作用于新活跃账号。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| name | string | 是 | 要切换到的账号别名（见 `auth_list`） |
+
+**出参**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| status | string | `success` |
+| message | string | `switched to account <name>` |
+
 ### meeting — 会议管理（12 个）
 
 | Tool | 说明 |
@@ -392,6 +469,241 @@ tmeet mcp --transport streamable-http \
 | `meeting_invitees_replace` | 替换全部受邀者 |
 | `meeting_conflict` | 检测某时间段是否与已有待开始/进行中会议冲突，返回 `meet_conflict` 布尔值与冲突会议列表 |
 
+> 以下各 tool 的出参统一为 `result.Result.Data`，即腾讯会议 REST API 响应经字段转换（时间戳→ISO 日期、状态码→中文、base64→明文、`total_count==0` 剥离等）后的 JSON 文本；`TraceId`/`Message` 不进入 MCP 输出。
+
+#### meeting_list
+
+列出当前用户的待开始/进行中会议。时间参数用带时区的 ISO 8601，如 `2026-03-12T15:00+08:00`。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| start | string | 否 | 查询开始时间（ISO 8601） |
+| end | string | 否 | 查询结束时间（ISO 8601） |
+| show_all_sub | integer | 否 | 是否展示全部子会议：0-否（默认），1-是 |
+| page_token | string | 否 | 分页 token，取自上一次响应 |
+| page_size | integer | 否 | 分页大小，最大 20，默认 20 |
+
+**出参**
+
+会议列表 JSON，含 `meeting_info_list`（每项含 `meeting_code`（向用户展示此项而非 meeting_id）、`status`、`start_time`/`end_time`（已转 ISO 日期）、`meeting_type`、`recurring_type`、`until_date`、`until_type`、`join_meeting_role`、`only_user_join_type`、`is_show_all_sub_meetings` 等）及 `next_page_token`。
+
+#### meeting_list_ended
+
+列出当前用户在时间范围内的已结束会议。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| start | string | 否 | 查询开始时间（ISO 8601） |
+| end | string | 否 | 查询结束时间（ISO 8601） |
+| page | integer | 否 | 页码，从 1 开始（已废弃，用 `page_token`） |
+| page_size | integer | 否 | 分页大小，最大 30，默认 30 |
+| page_token | string | 否 | 分页 token |
+
+**出参**
+
+会议列表 JSON，含 `meeting_info_list`（每项含 `meeting_code`、`subject`、`start_time`/`end_time`（已转 ISO 日期）、`meeting_type` 等）及分页字段。
+
+#### meeting_search
+
+按关键字、会议号、时间范围、状态搜索会议。`query_field` 取 `subject`/`creator`/`note`/`all`；`start`/`end` 定义时间窗口。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| query | string | 否 | 搜索关键字（最长 50 字符） |
+| query_field | string | 否 | 搜索字段：`subject`/`creator`/`note`/`all`（默认 `all`） |
+| meeting_code | string | 否 | 按会议号精确过滤（仅数字） |
+| start | string | 否 | 时间窗口下界（ISO 8601） |
+| end | string | 否 | 时间窗口上界（ISO 8601） |
+| page_size | integer | 否 | 分页大小，最大 30，默认 30 |
+| page_token | string | 否 | 分页 token |
+
+**出参**
+
+搜索结果 JSON，含 `meetings`（已转换 `meeting_type`、`status`）；`total_count` 为 0 时剥离。
+
+#### meeting_get
+
+按 `meeting_id` 或 `meeting_code` 查询会议详情（二者必传其一）。`meeting_id` 为内部 ID，向用户展示 `meeting_code`。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| meeting_id | string | 否 | 会议 ID（运行时 `meeting_id`/`meeting_code` 至少传其一） |
+| meeting_code | string | 否 | 会议号（运行时 `meeting_id`/`meeting_code` 至少传其一） |
+
+**出参**
+
+会议详情 JSON，含 `subject`、`start_time`/`end_time`（已转 ISO 日期）、`meeting_info_list.status`、`meeting_type`、`recurring_type`、`time_zone`（已 base64 解码）、`until_date`、`until_type` 等。
+
+#### meeting_create
+
+创建会议。`subject`/`start`/`end` 必填（ISO 8601 带时区）。周期性会议需 `meeting_type=1` 并提供 `recurring_type`/`until_type`/`until_count`[/`until_date`]。`water_mark_type`/`audio_watermark`/`auto_record_type`/`auto_asr` 仅在传入时生效。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| subject | string | 是 | 会议主题 |
+| start | string | 是 | 开始时间（ISO 8601，如 `2026-03-12T14:00+08:00`） |
+| end | string | 是 | 结束时间（ISO 8601） |
+| password | string | 否 | 会议密码（4-6 位数字） |
+| timezone | string | 否 | 时区，如 `Asia/Shanghai` |
+| meeting_type | integer | 否 | 0-普通（默认），1-周期性 |
+| join_type | integer | 否 | 入会限制：1-所有人，2-仅受邀，3-仅内部 |
+| waiting_room | boolean | 否 | 是否启用等候室 |
+| recurring_type | integer | 否 | 周期类型（`meeting_type=1` 时）：0-每日，1-工作日，2-每周，3-双周，4-每月 |
+| until_type | integer | 否 | 周期结束方式：0-按日期，1-按次数 |
+| until_count | integer | 否 | 周期次数（每日/每周≤500，双周/每月≤50，默认 7） |
+| until_date | string | 否 | 周期结束日期（ISO 8601） |
+| invitees | array&lt;string&gt; | 否 | 受邀者 open_id 列表（最多 100） |
+| water_mark_type | integer | 否 | 文字水印：0-单行，1-双行，2-关闭（默认）。仅在传入时生效 |
+| audio_watermark | boolean | 否 | 音频水印。仅在传入时生效 |
+| auto_record_type | string | 否 | 自动录制：`none`/`local`/`cloud`。仅在传入时生效 |
+| auto_asr | boolean | 否 | 自动语音转写。仅在传入时生效 |
+
+**出参**
+
+会议详情 JSON，含 `meeting_code`、`start_time`/`end_time`（已转 ISO 日期）、`only_user_join_type` 等。
+
+#### meeting_update
+
+按 `meeting_id` 更新会议，仅更新传入字段。周期会议：设 `meeting_type=1` 配周期字段，或设 `sub_meeting_id` 更新单场子会议时间（二者互斥）。`invitees` 与 `invitees_type`（replace/add/remove）必须同时传入。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| meeting_id | string | 是 | 会议 ID |
+| subject | string | 否 | 会议主题 |
+| start | string | 否 | 开始时间（ISO 8601） |
+| end | string | 否 | 结束时间（ISO 8601） |
+| password | string | 否 | 会议密码（4-6 位数字） |
+| timezone | string | 否 | 时区 |
+| meeting_type | integer | 否 | 0-普通，1-周期性。仅在传入时生效 |
+| join_type | integer | 否 | 入会限制：1-所有人，2-仅受邀，3-仅内部 |
+| waiting_room | boolean | 否 | 是否启用等候室 |
+| recurring_type | integer | 否 | 周期类型（`meeting_type=1` 时） |
+| until_type | integer | 否 | 周期结束方式 |
+| until_count | integer | 否 | 周期次数 |
+| until_date | string | 否 | 周期结束日期（ISO 8601） |
+| sub_meeting_id | string | 否 | 子会议 ID，用于更新单场子会议时间（与周期字段互斥） |
+| invitees | array&lt;string&gt; | 否 | 受邀者 open_id 列表 |
+| invitees_type | string | 否 | 受邀者策略：`replace`/`add`/`remove`（传 `invitees` 时必填） |
+| water_mark_type | integer | 否 | 文字水印：0-单行，1-双行，2-关闭。仅在传入时生效 |
+| audio_watermark | boolean | 否 | 音频水印。仅在传入时生效 |
+| auto_record_type | string | 否 | 自动录制：`none`/`local`/`cloud`。仅在传入时生效 |
+| auto_asr | boolean | 否 | 自动语音转写。仅在传入时生效 |
+
+**出参**
+
+会议详情 JSON，含 `meeting_code`、`start_time`/`end_time`（已转 ISO 日期）、`only_user_join_type` 等。
+
+#### meeting_cancel
+
+按 `meeting_id` 取消会议。周期会议：设 `meeting_type=1` 取消整个系列，或提供 `sub_meeting_id` 取消单场。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| meeting_id | string | 是 | 会议 ID |
+| sub_meeting_id | string | 否 | 子会议 ID，取消指定周期实例 |
+| meeting_type | integer | 否 | 0-普通/单场子会议，1-整个周期会议 |
+
+**出参**
+
+取消结果 JSON（API 原样返回，无字段转换）。
+
+#### meeting_invitees_list
+
+按 `meeting_id` 查询会议受邀者列表。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| meeting_id | string | 是 | 会议 ID |
+| pos | integer | 否 | 起始位置（已废弃，用 `page_token`） |
+| page_token | string | 否 | 分页 token |
+| page_size | integer | 否 | 分页大小，最大 30，默认 30 |
+
+**出参**
+
+受邀者列表 JSON（API 原样返回）。
+
+#### meeting_invitees_add
+
+按 `meeting_id` 添加受邀者，传入 open_id 列表。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| meeting_id | string | 是 | 会议 ID |
+| invitees | array&lt;string&gt; | 是 | 待添加受邀者 open_id 列表（最多 100） |
+
+**出参**
+
+操作结果 JSON（API 原样返回）。
+
+#### meeting_invitees_remove
+
+按 `meeting_id` 移除受邀者，传入 open_id 列表。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| meeting_id | string | 是 | 会议 ID |
+| invitees | array&lt;string&gt; | 是 | 待移除受邀者 open_id 列表（最多 100） |
+
+**出参**
+
+操作结果 JSON（API 原样返回）。
+
+#### meeting_invitees_replace
+
+按 `meeting_id` 替换全部受邀者。`invitees` 留空表示移除全部。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| meeting_id | string | 是 | 会议 ID |
+| invitees | array&lt;string&gt; | 否 | 新受邀者 open_id 列表（空表示移除全部，最多 100） |
+
+**出参**
+
+操作结果 JSON（API 原样返回）。
+
+#### meeting_conflict
+
+检测某时间段是否与当前用户已有待开始/进行中会议冲突。仅检查待开始/进行中会议，不含已结束会议。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| start | string | 是 | 时间段起点（带时区 ISO 8601，如 `2026-08-31T12:30+08:00`） |
+| end | string | 是 | 时间段终点（带时区 ISO 8601，须晚于 `start`） |
+
+**出参**
+
+自定义结构（非 API 透传）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| meet_conflict | boolean | 是否存在冲突 |
+| total_count | integer | 冲突会议数 |
+| conflict_meetings | array | 冲突会议列表，每项含已转换的 `start_time`/`end_time` 等，向用户展示 `meeting_code` |
+
 ### record — 录制管理（9 个）
 
 | Tool | 说明 |
@@ -406,12 +718,203 @@ tmeet mcp --transport streamable-http \
 | `record_permission_apply_prepare` | 预览录制权限申请（两步流第一步） |
 | `record_permission_apply_commit` | 提交录制权限申请（两步流第二步，用户确认后调用） |
 
+#### record_list
+
+列出录制记录。以下三组条件至少满足其一：`start`+`end`（时间范围）、`meeting_id`、`meeting_code`。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| start | string | 否 | 查询开始时间（ISO 8601） |
+| end | string | 否 | 查询结束时间（ISO 8601） |
+| meeting_id | string | 否 | 按会议 ID 过滤 |
+| meeting_code | string | 否 | 按会议号过滤 |
+| page | integer | 否 | 页码（已废弃，用 `page_token`） |
+| page_size | integer | 否 | 分页大小，最大 30，默认 30 |
+| page_token | string | 否 | 分页 token |
+
+**出参**
+
+录制列表 JSON，含 `media_start_time`/`record_start_time`/`record_end_time`（已转 ISO 日期）、`state`（状态码→中文）、`record_type`（已转换）、`meeting_record_id` 等；`total_count` 为 0 时剥离。
+
+#### record_search
+
+按关键字、会议号、会议 ID 或时间范围搜索录制。`query_field` 取 `subject`/`creator`/`transcript_content`/`smart_minutes`/`timeline`/`all`；`file_type` 取 `video`/`audio`/`transcript`/`upload`/`external`/`all`。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| query | string | 否 | 搜索关键字（最长 50 字符） |
+| query_field | string | 否 | 搜索字段（默认 `all`） |
+| file_type | string | 否 | 文件类型：`video`/`audio`/`transcript`/`upload`/`external`/`all`（默认 `all`） |
+| meeting_id | string | 否 | 按会议 ID 过滤 |
+| meeting_code | string | 否 | 按会议号过滤 |
+| start | string | 否 | 时间窗口下界（ISO 8601） |
+| end | string | 否 | 时间窗口上界（ISO 8601） |
+| page_size | integer | 否 | 分页大小，最大 30，默认 30 |
+| page_token | string | 否 | 分页 token |
+
+**出参**
+
+搜索结果 JSON（API 原样返回）；`total_count` 为 0 时剥离。
+
+#### record_address
+
+按 `meeting_record_id` 获取录制文件下载地址。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| meeting_record_id | string | 是 | 会议录制 ID |
+| page | integer | 否 | 页码（已废弃，用 `page_token`） |
+| page_size | integer | 否 | 分页大小，最大 30，默认 30 |
+| page_token | string | 否 | 分页 token |
+
+**出参**
+
+下载地址列表 JSON（API 原样返回）。
+
+#### record_smart_minutes
+
+按 `record_file_id` 获取 AI 智能纪要（摘要 + 待办）。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| record_file_id | string | 是 | 录制文件 ID |
+| lang | string | 否 | 语言：`default`/`zh`/`en`/`ja`（默认 `default`） |
+| pwd | string | 否 | 录制文件访问密码 |
+
+**出参**
+
+智能纪要 JSON（API 原样返回）。
+
+#### record_transcript_get
+
+按 `record_file_id` 获取转写详情，支持 `pid`+`limit` 分页。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| record_file_id | string | 是 | 录制文件 ID |
+| meeting_id | string | 否 | 会议 ID |
+| pid | string | 否 | 起始段落数 ID |
+| limit | string | 否 | 查询段落数 |
+
+**出参**
+
+转写详情 JSON，`start_time`/`end_time` 已转为 `HH:MM:SS`。
+
+#### record_transcript_paragraphs
+
+按 `record_file_id` 获取转写段落数据。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| record_file_id | string | 是 | 录制文件 ID |
+| meeting_id | string | 否 | 会议 ID |
+
+**出参**
+
+段落数组 JSON，`start_time`/`end_time` 已转为 `HH:MM:SS`，`audio_detect` 已转换。
+
+#### record_transcript_search
+
+按 `record_file_id` 和 `text` 在转写内容中搜索。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| record_file_id | string | 是 | 录制文件 ID |
+| meeting_id | string | 否 | 会议 ID |
+| text | string | 是 | 搜索文本 |
+
+**出参**
+
+搜索结果 JSON，`start_time` 已转为 `HH:MM:SS`。
+
+#### record_permission_apply_prepare
+
+预览录制权限申请（两步流第一步）。先调用本 tool 预览，用户确认后再调 `record_permission_apply_commit`。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| meeting_record_id | string | 是 | 会议录制 ID |
+| meeting_id | string | 否 | 会议 ID |
+
+**出参**
+
+预览信息 JSON（API 原样返回）。
+
+#### record_permission_apply_commit
+
+提交录制权限申请（两步流第二步，用户确认后调用）。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| meeting_record_id | string | 是 | 会议录制 ID |
+| meeting_id | string | 否 | 会议 ID |
+
+**出参**
+
+提交结果 JSON（API 原样返回）。
+
 ### report — 会议报告（2 个）
 
 | Tool | 说明 |
 |------|------|
 | `report_participants` | 查询参会人列表 |
 | `report_waiting_room_log` | 查询等候室成员记录 |
+
+#### report_participants
+
+按 `meeting_id` 查询参会人列表，支持时间范围过滤与分页。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| meeting_id | string | 是 | 会议 ID |
+| sub_meeting_id | string | 否 | 周期会议的子会议 ID |
+| pos | integer | 否 | 起始位置（已废弃，用 `page_token`） |
+| size | integer | 否 | 分页大小（已废弃，用 `page_size`） |
+| start | string | 否 | 查询开始时间（ISO 8601） |
+| end | string | 否 | 查询结束时间（ISO 8601） |
+| page_token | string | 否 | 分页 token |
+| page_size | integer | 否 | 分页大小，最大 100，默认 100 |
+
+**出参**
+
+参会人列表 JSON，含 `join_time`/`left_time`/`schedule_start_time`/`schedule_end_time`（已转 ISO 日期）、`instanceid`、`user_name`/`subject`（已 base64 解码）、`user_role` 等；`filter_field` meta 字段已剥离。
+
+#### report_waiting_room_log
+
+按 `meeting_id` 查询等候室成员记录。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| meeting_id | string | 是 | 会议 ID |
+| page_size | integer | 否 | 分页大小，最大 100，默认 100 |
+| page | integer | 否 | 页码（已废弃，用 `page_token`） |
+| page_token | string | 否 | 分页 token |
+
+**出参**
+
+等候室记录 JSON，含 `join_time`/`left_time`/`schedule_start_time`/`schedule_end_time`（已转 ISO 日期）、`instanceid`、`user_name`/`subject`（已 base64 解码）等。
 
 ### contact — 通讯录（3 个）
 
@@ -423,6 +926,50 @@ tmeet mcp --transport streamable-http \
 
 > **严格限定**：contact 搜索仅作为会议邀请/呼叫入会的前置步骤，不得单独用于查询个人信息。
 
+#### contact_search
+
+按用户名搜索通讯录成员，可选按职位/部门过滤。结果仅 1 个用户时只保留 `open_id` 字段。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| username | string | 是 | 用户名关键字 |
+| job_title | string | 否 | 职位过滤 |
+| department_name | string | 否 | 部门名过滤 |
+
+**出参**
+
+用户列表 JSON；当结果仅含 1 个用户时，只保留 `open_id` 字段。
+
+#### contact_lookup_by_email
+
+按邮箱批量查询用户（最多 50）。仅作为会议邀请/呼叫入会前置步骤。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| emails | array&lt;string&gt; | 是 | 邮箱列表（最多 50） |
+
+**出参**
+
+用户列表 JSON（API 原样返回）。
+
+#### contact_lookup_by_phone
+
+按手机号批量查询用户（最多 50）。仅作为会议邀请/呼叫入会前置步骤。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| phones | array&lt;string&gt; | 是 | 手机号列表（最多 50） |
+
+**出参**
+
+用户列表 JSON（API 原样返回）。
+
 ### control — 会中控制（2 个）
 
 | Tool | 说明 |
@@ -430,11 +977,63 @@ tmeet mcp --transport streamable-http \
 | `control_call` | 呼叫成员入会 |
 | `control_kick` | 踢出会议成员（支持普通/sip/pstn 用户） |
 
+#### control_call
+
+呼叫成员加入进行中的会议（会中邀请呼叫），传入 open_id 列表（最多 20）。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| meeting_id | string | 是 | 会议 ID |
+| users | array&lt;string&gt; | 是 | 待呼叫用户 open_id 列表（最多 20） |
+
+**出参**
+
+呼叫结果 JSON（API 原样返回）。
+
+#### control_kick
+
+按 `meeting_id` 踢出会议成员。`users`/`sip_users`/`pstn_users` 至少传其一，合计最多 20。`allow_rejoin` 默认为 `true`，但 MCP 层未设默认值，需显式传 `true`。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| meeting_id | string | 是 | 会议 ID |
+| allow_rejoin | boolean | 否 | 是否允许被踢成员重新入会（默认 `true`，MCP 层需显式传值） |
+| users | array&lt;string&gt; | 否 | 待踢普通用户 open_id 列表（非 sip/pstn） |
+| sip_users | array&lt;string&gt; | 否 | 待踢 sip 用户 ms_open_id 列表 |
+| pstn_users | array&lt;string&gt; | 否 | 待踢 pstn 用户 ms_open_id 列表 |
+
+**出参**
+
+踢出结果 JSON（API 原样返回）。
+
 ### tshoot — 问题排查（1 个）
 
 | Tool | 说明 |
 |------|------|
 | `tshoot_feedback` | 向平台反馈工具缺失/失败/能力不足等问题 |
+
+#### tshoot_feedback
+
+向平台反馈工具缺失/失败/能力不足等问题。`category` 取 `tool_not_found`/`tool_error`/`tool_inadequate`/`unexpected_result`/`suggestion`。
+
+**入参**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| category | string | 是 | 反馈类别：`tool_not_found`/`tool_error`/`tool_inadequate`/`unexpected_result`/`suggestion` |
+| intent | string | 是 | 原始意图（最长 200 字符） |
+| actions_tried | string | 否 | 已尝试的操作（最长 500 字符） |
+| result | string | 否 | 结果或阻塞点（最长 500 字符） |
+| tool_name | string | 否 | 使用过的 tool/命令名 |
+| error_code | string | 否 | tool 返回的错误码 |
+
+**出参**
+
+反馈提交结果 JSON（API 原样返回）。
 
 > `tshoot log`（导出本地日志）涉及文件系统操作，保留 CLI-only，未暴露为 MCP tool。
 
