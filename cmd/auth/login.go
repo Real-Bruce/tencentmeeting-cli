@@ -128,54 +128,69 @@ func (o *LoginOptions) Run(cmd *cobra.Command, args []string) error {
 	// loop on its own auth code; tmeetAuth holds no mutable state, and the shared
 	// context is only used read-only. Concurrent polling keeps the token-lock hold
 	// at ~5 minutes regardless of how many accounts are being authorized.
+	//
+	// 结果通过带缓冲 channel 流式回传：单个账号轮询一完成即由 Phase 4 接收循环
+	// 即时保存并打印成功状态，无需等待全部账号完成。closer goroutine 在所有轮询
+	// goroutine 结束后关闭 channel，从而让接收循环自然退出。
 	type pollResult struct {
 		name  string
 		token *auth.AuthTokenData
 		err   error
 	}
-	results := make([]pollResult, len(pendings))
+	resultCh := make(chan pollResult, len(pendings))
 	var wg sync.WaitGroup
-	for i, p := range pendings {
+	for _, p := range pendings {
 		wg.Add(1)
-		go func(i int, p pending) {
+		go func(p pending) {
 			defer wg.Done()
 			td, err := tmeetAuth.PollingOauth2Result(ctx, p.code)
-			results[i] = pollResult{name: p.name, token: td, err: err}
-		}(i, p)
+			resultCh <- pollResult{name: p.name, token: td, err: err}
+		}(p)
 	}
-	wg.Wait()
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
 
-	// Phase 4: save sequentially. config.SaveUserConfig does read-modify-write on
-	// config.json, so concurrent saves would drop account entries. A per-account
-	// failure (e.g. AccountNameConflictError) is reported and skipped without
-	// aborting the remaining accounts.
-	for _, r := range results {
+	// Phase 4: save + report each account as its poll completes. The receiver is
+	// single-threaded, so config.SaveUserConfig's read-modify-write on config.json
+	// stays serialized without an extra mutex. A per-account failure (e.g.
+	// AccountNameConflictError) is reported and skipped without aborting the
+	// remaining accounts. 每处理完一个账号，若仍有未完成账号，则再次打印
+	// "waiting for authorization..." 提示用户继续等待其余账号授权。
+	remaining := len(pendings)
+	for r := range resultCh {
 		if r.err != nil {
 			log.Errorf(ctx, "[%s] polling authorization result failed: %v", r.name, r.err)
 			output.PrintInfof(cmd, "[%s] login failed: %v", r.name, r.err)
-			continue
-		}
-		userConfig := &config.UserConfig{
-			Name:         r.name,
-			SdkId:        r.token.SdkId,
-			OpenId:       r.token.OpenID,
-			AccessToken:  r.token.AccessToken,
-			RefreshToken: r.token.RefreshToken,
-		}
-		userConfig.Expires, _ = strconv.ParseInt(r.token.AccessTokenExpireTime, 10, 64)
-		userConfig.RefreshTokenExpires, _ = strconv.ParseInt(r.token.RefreshTokenExpireTime, 10, 64)
-		err := retry.Do(ctx, func(ctx context.Context) error {
-			if err := config.SaveUserConfig(userConfig); err != nil {
-				log.Errorf(ctx, "[%s] save user config failed: %v", r.name, err)
-				return err
+		} else {
+			userConfig := &config.UserConfig{
+				Name:         r.name,
+				SdkId:        r.token.SdkId,
+				OpenId:       r.token.OpenID,
+				AccessToken:  r.token.AccessToken,
+				RefreshToken: r.token.RefreshToken,
 			}
-			return nil
-		}, retry.DefaultOptions)
-		if err != nil {
-			output.PrintInfof(cmd, "[%s] login failed: %v", r.name, err)
-			continue
+			userConfig.Expires, _ = strconv.ParseInt(r.token.AccessTokenExpireTime, 10, 64)
+			userConfig.RefreshTokenExpires, _ = strconv.ParseInt(r.token.RefreshTokenExpireTime, 10, 64)
+			if err := retry.Do(ctx, func(ctx context.Context) error {
+				if err := config.SaveUserConfig(userConfig); err != nil {
+					log.Errorf(ctx, "[%s] save user config failed: %v", r.name, err)
+					return err
+				}
+				return nil
+			}, retry.DefaultOptions); err != nil {
+				output.PrintInfof(cmd, "[%s] login failed: %v", r.name, err)
+			} else {
+				output.PrintInfof(cmd, "[%s] login successful (openId: %s)", r.name, r.token.OpenID)
+			}
 		}
-		output.PrintInfof(cmd, "[%s] login successful (openId: %s)", r.name, r.token.OpenID)
+		remaining--
+		if remaining > 0 {
+			output.PrintInfof(cmd, "")
+			output.PrintInfof(cmd, "waiting for authorization...")
+			output.PrintInfof(cmd, "")
+		}
 	}
 
 	// Record the caller's identity (AI-Agent / LLM model) in plaintext agent.json.
