@@ -117,7 +117,19 @@ func (w *TmeetAuth) RefreshToken(ctx context.Context) error {
 			return exception.RefreshTokenFailedError
 		}
 
+		// 保留账号别名：刷新只更新 token 字段，不得改写 Name。SaveUserConfig 在 Name
+		// 为空时会回退成 OpenId，进而把 config.json 注册表里的别名覆盖成 open_id。
+		// 优先取锁内重读到的 authoritative 别名；缺失时回退到内存中既有的 Name。
+		accountName := ""
+		if userConfig != nil {
+			accountName = userConfig.Name
+		}
+		if accountName == "" {
+			accountName = w.tmeet.UserConfig.Name
+		}
+
 		w.tmeet.UserConfig = &config.UserConfig{}
+		w.tmeet.UserConfig.Name = accountName
 		w.tmeet.UserConfig.SdkId = tokenData.SdkId
 		w.tmeet.UserConfig.OpenId = tokenData.OpenID
 		w.tmeet.UserConfig.AccessToken = tokenData.AccessToken

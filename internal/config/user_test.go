@@ -683,6 +683,42 @@ func TestReLoginSameAccountUpdatesAlias(t *testing.T) {
 	}
 }
 
+// TestSaveUserConfigEmptyNamePreservesAlias 回归测试：刷新等路径若以 Name="" 调用
+// SaveUserConfig，不得把注册表既有别名覆盖成 open_id（auth.go RefreshToken 曾踩此坑）。
+func TestSaveUserConfigEmptyNamePreservesAlias(t *testing.T) {
+	_, cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	// 首次登录：带别名
+	cfg := &UserConfig{Name: "myalias", OpenId: "open_qtj", AccessToken: "t1", SdkId: "sdk1"}
+	if err := SaveUserConfig(cfg); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	// 模拟 token 刷新：重建 UserConfig 但遗漏 Name（与 auth.go RefreshToken 同样的写法）
+	refreshed := &UserConfig{OpenId: "open_qtj", AccessToken: "t2", SdkId: "sdk2"}
+	refreshed.Expires = 9999
+	if err := SaveUserConfig(refreshed); err != nil {
+		t.Fatalf("re-Save with empty Name: %v", err)
+	}
+	accounts, _ := ListAccounts()
+	if len(accounts) != 1 {
+		t.Fatalf("want 1 account, got %d", len(accounts))
+	}
+	if accounts[0].Name != "myalias" {
+		t.Errorf("alias = %q, want myalias (must not be overwritten by open_id)", accounts[0].Name)
+	}
+	// active 指针也应保持为既有别名，而非 open_id
+	if name := GetActiveAccountName(); name != "myalias" {
+		t.Errorf("active name = %q, want myalias", name)
+	}
+	// 加密 blob 内 token 已更新
+	ResetCache()
+	got, _ := GetUserConfig()
+	if got == nil || got.AccessToken != "t2" || got.Name != "myalias" {
+		t.Fatalf("refresh did not update token while keeping alias: %+v", got)
+	}
+}
+
 func TestClearAccountByName(t *testing.T) {
 	_, cleanup := setupTestEnv(t)
 	defer cleanup()

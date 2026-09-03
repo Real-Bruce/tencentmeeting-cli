@@ -214,6 +214,11 @@ func SaveUserConfig(config *UserConfig) error {
 	upserted := false
 	for i := range meta.Accounts {
 		if meta.Accounts[i].OpenId == config.OpenId {
+			// 调用方未提供别名（config.Name 为空）时保留注册表既有别名，避免刷新等路径
+			// 遗漏 Name 时把 alias 覆盖成 open_id（防御性加固，不影响首登录的 append 分支）。
+			if config.Name == "" && meta.Accounts[i].Name != "" {
+				name = meta.Accounts[i].Name
+			}
 			meta.Accounts[i].Name = name
 			meta.Accounts[i].SdkId = config.SdkId
 			upserted = true
