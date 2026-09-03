@@ -145,6 +145,15 @@ type toolFunc[P any] func(ctx context.Context, tmeet *internal.Tmeet, params P) 
 // requireLogin 为需要登录的 tool 做 preCheck：本地凭证为空时返回可操作错误。
 // 跳过登录校验的 tool（如 auth_*）不调用本函数。
 func (s *Server) requireLogin(ctx context.Context) error {
+	// 长驻进程缓存失效：若活跃账号已被外部进程（CLI `auth use`）改动，
+	// 内存中的 userConfig 缓存仍指向旧账号，会静默用旧账号凭证服务新账号。
+	// 检测到不一致时丢弃缓存，强制按新活跃账号重新读取。
+	if s.tmeet.UserConfig != nil {
+		if active := config.GetActiveAccountName(); active != "" && active != s.tmeet.UserConfig.Name {
+			config.ResetCache()
+		}
+	}
+
 	usr, err := config.GetUserConfig()
 	if err != nil {
 		// 读取凭证出错，可能文件损坏；交给上层处理，不静默。

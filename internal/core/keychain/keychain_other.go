@@ -17,3 +17,7 @@ func protectMasterKey(_ string, raw []byte) ([]byte, error) {
 func unprotectMasterKey(_ string, protected []byte) ([]byte, error) {
 	return protected, nil
 }
+
+// evictMasterKeyCache is a no-op on Linux/Unix: the only master-key cache is the
+// fileKeychain.keys sync.Map, which fileKeychain.evictCachedKey clears directly.
+func evictMasterKeyCache(_ string) {}

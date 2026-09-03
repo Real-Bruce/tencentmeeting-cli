@@ -119,6 +119,13 @@ func protectMasterKey(account string, raw []byte) ([]byte, error) {
 	return cryptProtectData(raw, dpapiEntropy(ServiceName, account))
 }
 
+// evictMasterKeyCache drops the cached unprotected master key for the account on Windows.
+// Called by fileKeychain.evictCachedKey after a decryption failure so the next read re-runs
+// DPAPI unprotect against the on-disk bytes (which another process may have regenerated).
+func evictMasterKeyCache(account string) {
+	masterKeyCache.Delete(account)
+}
+
 // unprotectMasterKey DPAPI-decrypts the on-disk master key bytes for the given account.
 // Falls back to nil-entropy DPAPI for ciphertexts written by older releases (auto-migration
 // on first read), then re-encrypts with the entropy-bound form.

@@ -82,25 +82,27 @@ func (k *fileKeychain) loadOrCreateMasterKey(account string) ([]byte, error) {
 	return raw, nil
 }
 
+// Get reads and decrypts the per-account data.enc.
+//
+// 长驻进程（如 MCP server）可能缓存了旧 master key：若该账号在另一进程中被轮换了
+// master.key（登出 Remove 删除 → 重新登录 Set 生成新 key），缓存的旧 key 解密新 data.enc
+// 必然 GCM 认证失败。因此解密失败时先驱逐缓存的 master key 并从磁盘重读一次再试，
+// 兼容跨进程 master.key 轮换（自愈）；仍失败才认定为数据损坏。
 func (k *fileKeychain) Get(service, account string) (string, error) {
-	masterKey, err := k.getMasterKey(account)
+	masterKey, plaintext, needsMigration, err := k.tryGet(account)
 	if err != nil {
-		return "", fmt.Errorf("failed to load master key: %w", err)
+		// 驱逐陈旧的缓存 master key，从磁盘重读一次再试，自愈跨进程 key 轮换。
+		k.evictCachedKey(account)
+		masterKey, plaintext, needsMigration, err = k.tryGet(account)
+		if err != nil {
+			return "", err
+		}
 	}
 
-	filePath := encFilePath(GetDataDir(), account)
-	cipherData, err := readEncFile(filePath)
-	if err != nil {
-		return "", err
-	}
-
-	// SEC-009: account as AAD binds ciphertext to account, preventing cross-account .enc replacement.
-	aad := []byte(account)
-	plaintext, needsMigration, err := decryptWithAADFallback(masterKey, cipherData, aad)
-	if err != nil {
-		return "", err
-	}
 	if needsMigration {
+		filePath := encFilePath(GetDataDir(), account)
+		// SEC-009: account as AAD binds ciphertext to account, preventing cross-account .enc replacement.
+		aad := []byte(account)
 		if newCipher, encErr := encrypt(masterKey, plaintext, aad); encErr == nil {
 			if wErr := atomicWriteFile(filePath, newCipher); wErr != nil {
 				fmt.Fprintf(os.Stderr, "warning: AAD migration write failed (account=%s): %v\n", account, wErr)
@@ -110,6 +112,36 @@ func (k *fileKeychain) Get(service, account string) (string, error) {
 	defer zeroBytes(plaintext)
 
 	return string(plaintext), nil
+}
+
+// tryGet 读 master.key（命中缓存或从磁盘加载）+ data.enc 并解密，返回所用 master key、
+// 明文与是否需要 AAD 迁移。不处理缓存驱逐重试，由 Get 编排。
+func (k *fileKeychain) tryGet(account string) (masterKey, plaintext []byte, needsMigration bool, err error) {
+	masterKey, err = k.getMasterKey(account)
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("failed to load master key: %w", err)
+	}
+
+	filePath := encFilePath(GetDataDir(), account)
+	cipherData, err := readEncFile(filePath)
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	// SEC-009: account as AAD binds ciphertext to account, preventing cross-account .enc replacement.
+	aad := []byte(account)
+	plaintext, needsMigration, err = decryptWithAADFallback(masterKey, cipherData, aad)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	return masterKey, plaintext, needsMigration, nil
+}
+
+// evictCachedKey 清除该账号在内存中缓存的 master key（fileKeychain.keys + 平台缓存），
+// 下次 getMasterKey 会从磁盘重新读取。用于解密失败后兼容跨进程 master.key 轮换。
+func (k *fileKeychain) evictCachedKey(account string) {
+	k.keys.Delete(account)
+	evictMasterKeyCache(account)
 }
 
 func (k *fileKeychain) Set(service, account, data string) error {

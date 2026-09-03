@@ -224,3 +224,42 @@ func TestIntegrationMasterKeyFilePermission(t *testing.T) {
 		t.Errorf("master key permission = %o, want 0600", perm)
 	}
 }
+
+// TestIntegrationStaleMasterKeyCacheSelfHeals 复现 MCP 长驻进程的 master key 缓存陈旧场景：
+// 进程 A 用 kc1 写入 data1（生成 key1 并缓存）；另一进程 B 登出删除 master.key 后重新登录
+// （kc2 重新生成 key2、写 data2）；kc1 内存里仍缓存 key1，用它解 data2 必然 GCM 失败。
+// Get 应驱逐陈旧缓存、从磁盘重读 key2 重试一次，自愈返回 data2。
+func TestIntegrationStaleMasterKeyCacheSelfHeals(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("TMEET_CLI_DATA_DIR", dataDir)
+
+	account := "stale-cache-acct"
+	payload1 := `{"who":"first","v":1}`
+	payload2 := `{"who":"second","v":2}`
+
+	// 进程 A：首次写入，生成 master key K1 并缓存进 kc1.keys。
+	kc1 := New()
+	t.Cleanup(func() { _ = kc1.Remove(ServiceName, account) })
+	if err := kc1.Set(ServiceName, account, payload1); err != nil {
+		t.Fatalf("kc1.Set: %v", err)
+	}
+
+	// 进程 B（独立实例，缓存为空）：登出删除 master.key+data.enc，再重新登录生成 K2、写 data2。
+	kc2 := New()
+	if err := kc2.Remove(ServiceName, account); err != nil {
+		t.Fatalf("kc2.Remove: %v", err)
+	}
+	if err := kc2.Set(ServiceName, account, payload2); err != nil {
+		t.Fatalf("kc2.Set: %v", err)
+	}
+	// 此时磁盘 master.key=K2、data.enc(payload2)；kc1.keys 仍缓存 K1。
+
+	// kc1.Get：用陈旧 K1 解 K2 的 data.enc 必失败 → 驱逐重试 → 读到 K2 → 成功返回 payload2。
+	got, err := kc1.Get(ServiceName, account)
+	if err != nil {
+		t.Fatalf("kc1.Get after key rotation: %v (expected self-heal via cache eviction + disk reload)", err)
+	}
+	if got != payload2 {
+		t.Fatalf("kc1.Get() = %q, want %q (stale cache should self-heal to latest data)", got, payload2)
+	}
+}

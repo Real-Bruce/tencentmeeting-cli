@@ -222,7 +222,13 @@ func (s *Server) handleAuthUse(ctx context.Context, req mcp.CallToolRequest) (*m
 		return errorResult(err), nil
 	}
 	// 同步到内存中的 tmeet，确保长进程持有新活跃账号凭证。
-	if cfg, _ := config.GetUserConfig(); cfg != nil {
+	// 切换已生效（active 指针已持久化）；若该账号凭证读不出来（master key 轮换后自愈仍
+	// 失败或数据损坏），立即返回可操作错误引导重登，而非静默推迟到下一次 tool 调用。
+	if cfg, err := config.GetUserConfig(); err != nil {
+		return errorResult(exception.GetUserConfigUnknownError.With(
+			"switched to %q but its credentials are unreadable: %v; if this persists, re-login via auth_login_url + auth_login_poll to repair",
+			name, err)), nil
+	} else if cfg != nil {
 		s.tmeet.UserConfig = cfg
 	}
 
