@@ -86,15 +86,24 @@ chmod +x /opt/tmeet/tmeet
 
 ### 3. 完成 OAuth 登录
 
+先建专用系统用户与凭证目录（一次性）。登录、systemd 服务都以此用户与目录操作，保证凭证写入与读取路径一致：
+
 ```bash
-# 在服务器终端执行，浏览器扫码授权（--name 必填，为账号指定别名）
-/opt/tmeet/tmeet auth login --name <别名>
+sudo useradd -r -s /usr/sbin/nologin -d /opt/tmeet tmeet
+sudo install -d -o tmeet -g tmeet -m 700 /opt/tmeet/.tmeet
 ```
 
-> 服务器没有浏览器时，使用 `--no-browser` 获取授权 URL，在本地浏览器打开：
-> ```bash
-> /opt/tmeet/tmeet auth login --name <别名> --no-browser
-> ```
+以 `tmeet` 用户、显式指定凭证目录执行登录（`--name` 必填，为账号指定别名）：
+
+```bash
+sudo -u tmeet env TMEET_CLI_CONFIG_DIR=/opt/tmeet/.tmeet \
+  TMEET_CLI_DATA_DIR=/opt/tmeet/.tmeet \
+  /opt/tmeet/tmeet auth login --name <别名> --no-browser
+```
+
+> 服务器没有浏览器时用 `--no-browser` 获取授权 URL，在本地浏览器打开扫码。
+>
+> ⚠️ 登录与 systemd unit 必须使用**同一套** `TMEET_CLI_CONFIG_DIR` + `TMEET_CLI_DATA_DIR`，且目录属主匹配服务的 `User=`。否则服务以其他用户/其他 HOME 启动时，会读到空目录，`auth_list` 查不到账号。
 
 ### 4. 配置 systemd 守护进程
 
@@ -107,12 +116,15 @@ After=network.target
 
 [Service]
 Type=simple
+User=tmeet
+Group=tmeet
 ExecStart=/opt/tmeet/tmeet mcp \
   --transport streamable-http \
   --addr 0.0.0.0:8347 \
   --api-key your-secret-key
 WorkingDirectory=/opt/tmeet
 Environment=TMEET_CLI_CONFIG_DIR=/opt/tmeet/.tmeet
+Environment=TMEET_CLI_DATA_DIR=/opt/tmeet/.tmeet
 Restart=always
 RestartSec=5
 
